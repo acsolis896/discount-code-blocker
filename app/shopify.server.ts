@@ -19,6 +19,42 @@ const shopify = shopifyApp({
   future: {
     expiringOfflineAccessTokens: true,
   },
+  hooks: {
+    afterAuth: async ({ admin }) => {
+      const response = await admin.graphql(`
+        mutation {
+          discountAutomaticAppCreate(
+            automaticAppDiscount: {
+              title: "Discount Rejection"
+              functionHandle: "discount-rejection-function-js"
+              discountClasses: [PRODUCT, ORDER]
+              startsAt: "2025-01-01T00:00:00Z"
+            }
+          ) {
+            automaticAppDiscount {
+              discountId
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `);
+
+      const { data } = await response.json();
+      const userErrors = data?.discountAutomaticAppCreate?.userErrors ?? [];
+
+      if (userErrors.length > 0) {
+        console.error("Failed to create Discount Rejection:", userErrors);
+      } else {
+        console.log(
+          "Discount Rejection created:",
+          data?.discountAutomaticAppCreate?.automaticAppDiscount?.discountId
+        );
+      }
+    },
+  },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),

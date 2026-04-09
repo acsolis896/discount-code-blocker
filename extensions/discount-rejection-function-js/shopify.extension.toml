@@ -13,5 +13,5 @@ description = "t:description"
   export = "cart-lines-discounts-generate-run"
 
   [extensions.build]
-  command = ""
+  command = "npm run build"
   path = "dist/function.wasm"

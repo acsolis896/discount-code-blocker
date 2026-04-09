@@ -4,9 +4,9 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
+    "build": "echo 'Using pre-built function.wasm'",
     "shopify": "npm exec -- shopify",
     "typegen": "npm exec -- shopify app function typegen",
-    "build": "npm exec -- shopify app function build",
     "preview": "npm exec -- shopify app function run",
     "test": "vitest",
     "test:unit": "vitest run src/"

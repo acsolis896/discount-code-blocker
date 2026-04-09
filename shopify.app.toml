@@ -2,7 +2,7 @@
 
 client_id = "99f724b82cb0d670c010a0ac57035052"
 name = "discount-code-blocker"
-application_url = "https://discount-code-blocker.vercel.app"
+application_url = "https://example.com"
 embedded = true
 
 [build]
@@ -24,7 +24,7 @@ api_version = "2026-04"
 scopes = "write_checkouts,write_discounts,write_metaobject_definitions,write_metaobjects,write_products"
 
 [auth]
-redirect_urls = [ "https://discount-code-blocker.vercel.app/api/auth/callback" ]
+redirect_urls = [ "https://example.com/api/auth" ]
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"
