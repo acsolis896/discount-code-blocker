@@ -1,87 +1,71 @@
-// // EXAMPLE FROM WEBSITE
-
-// /**
-//  * @typedef {import("../generated/api").CartInput} RunInput
-//  * @typedef {import("../generated/api").CartLinesDiscountsGenerateRunResult} CartLinesDiscountsGenerateRunResult
-//  */
-
-// /**
-//  * @param {RunInput} input
-//  * @returns {CartLinesDiscountsGenerateRunResult}
-//  */
-
-// export function cartLinesDiscountsGenerateRun(input) {
-//   const allInfluencerCodes = input.enteredDiscountCodes.filter(({ code }) =>
-//     code.toLowerCase().startsWith("BASS100-"),
-//   );
-
-//   const rejectableInfluencerCodes = allInfluencerCodes.filter(
-//     ({ rejectable }) => rejectable,
-//   );
-
-//   const hasNonRejectable = allInfluencerCodes.some(
-//     ({ rejectable }) => !rejectable,
-//   );
-
-//   const codesToReject = hasNonRejectable
-//     ? rejectableInfluencerCodes
-//     : rejectableInfluencerCodes.slice(0, -1);
-
-//   if (codesToReject.length === 0) {
-//     return { operations: [] };
-//   }
-
-//   return {
-//     operations: [
-//       {
-//         enteredDiscountCodesReject: {
-//           codes: codesToReject.map(({ code }) => ({ code })),
-//           message: `Only one influencer code allowed. Rejected: ${codesToReject.map((c) => c.code).join(", ")}`,
-//         },
-//       },
-//     ],
-//   };
-// }
-
 /**
- * @typedef {import("../generated/api").CartInput} RunInput
- * @typedef {import("../generated/api").CartLinesDiscountsGenerateRunResult} CartLinesDiscountsGenerateRunResult
+ * @typedef {import("../generated/api").InputQuery} RunInput
+ * @typedef {import("../generated/api").FunctionRunResult} CartLinesDiscountsGenerateRunResult
  */
 
 /**
- * Reject discount codes if cart contains a product with type "GWP"
- * 
+ * Applies a percentage discount to 1 unit of the highest-priced eligible product.
+ * Eligible product IDs and the percentage are read from the discount's metafield.
+ *
  * @param {RunInput} input
  * @returns {CartLinesDiscountsGenerateRunResult}
  */
 export function cartLinesDiscountsGenerateRun(input) {
+  const metafieldValue = input.discount?.metafield?.value;
+  if (!metafieldValue) {
+    return { operations: [] };
+  }
 
-  // Check if any product in cart has type "GWP"
-  const hasGwpProduct = input.cart.lines.some(line => {
-    const productType = line.merchandise?.product?.productType;
-    return productType === "GWP";
+  let config;
+  try {
+    config = JSON.parse(metafieldValue);
+  } catch {
+    return { operations: [] };
+  }
+
+  const { productIds, percentage } = config;
+  if (!Array.isArray(productIds) || productIds.length === 0 || !percentage) {
+    return { operations: [] };
+  }
+
+  const eligibleLines = input.cart.lines.filter((line) => {
+    const productId = line.merchandise?.product?.id;
+    return productId && productIds.includes(productId);
   });
 
-  // If no GWP items, allow all discounts
-  if (!hasGwpProduct) {
+  if (eligibleLines.length === 0) {
     return { operations: [] };
   }
 
-  // Find all discount codes that Shopify allows us to reject
-  const rejectableCodes = input.enteredDiscountCodes.filter(
-    ({ rejectable }) => rejectable
-  );
-
-  if (rejectableCodes.length === 0) {
-    return { operations: [] };
-  }
+  const bestLine = eligibleLines.reduce((best, line) => {
+    const price = parseFloat(line.cost.amountPerQuantity.amount);
+    const bestPrice = parseFloat(best.cost.amountPerQuantity.amount);
+    return price > bestPrice ? line : best;
+  });
 
   return {
     operations: [
       {
-        enteredDiscountCodesReject: {
-          codes: rejectableCodes.map(({ code }) => ({ code })),
-          message: "Discount codes cannot be used with free gift items.",
+        productDiscountsAdd: {
+          candidates: [
+            {
+              message: `${percentage}% off`,
+              targets: [
+                {
+                  cartLine: {
+                    id: bestLine.id,
+                    quantity: 1,
+                  },
+                },
+              ],
+              value: {
+                percentage: {
+                  value: percentage,
+                },
+              },
+            },
+          ],
+          selectionStrategy: "FIRST",
         },
       },
     ],
