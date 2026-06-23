@@ -11,9 +11,9 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build && ./node_modules/.bin/prisma generate
 
 # Set production env only at runtime, after build is complete
 ENV NODE_ENV=production
 
-CMD ["npm", "run", "docker-start"]
+CMD ["/bin/sh", "-c", "echo '=== RUNNING MIGRATE ===' && ./node_modules/.bin/prisma migrate deploy && echo '=== MIGRATE DONE ===' && echo '=== STARTING SERVER ===' && node ./node_modules/.bin/react-router-serve ./build/server/index.js 2>&1; echo '=== SERVER EXITED: '$?'==='"]
