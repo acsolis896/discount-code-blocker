@@ -16,4 +16,4 @@ RUN npm run build && ./node_modules/.bin/prisma generate
 # Set production env only at runtime, after build is complete
 ENV NODE_ENV=production
 
-CMD ["/bin/sh", "-c", "echo '=== RUNNING MIGRATE ===' && ./node_modules/.bin/prisma migrate deploy && echo '=== MIGRATE DONE ===' && echo '=== STARTING SERVER ===' && node ./node_modules/.bin/react-router-serve ./build/server/index.js 2>&1; echo '=== SERVER EXITED: '$?'==='"]
+CMD ["/bin/sh", "-c", "echo '=== NODE VERSION ===' && node --version && echo '=== FREE MEMORY ===' && free -m && ./node_modules/.bin/prisma migrate deploy && echo '=== MIGRATE DONE, LOADING SERVER MODULE ===' && node -e 'import(\"./build/server/index.js\").then(() => console.log(\"MODULE LOADED OK\")).catch(e => { console.error(\"MODULE LOAD FAILED:\", e.message, e.stack); process.exit(1); })' && echo '=== STARTING SERVER ===' && node ./node_modules/.bin/react-router-serve ./build/server/index.js"]
