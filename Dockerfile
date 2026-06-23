@@ -9,10 +9,14 @@ ENV NODE_ENV=production
 
 COPY package.json package-lock.json* ./
 
-RUN npm ci --omit=dev && npm cache clean --force
+# Install all deps (including devDeps) so the build step has what it needs
+RUN npm ci && npm cache clean --force
 
 COPY . .
 
 RUN npm run build
+
+# Prune devDeps after build to keep the image lean
+RUN npm prune --omit=dev
 
 CMD ["npm", "run", "docker-start"]
