@@ -15,6 +15,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  try {
   const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
 
@@ -121,6 +122,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     firstCode: codes[0].code,
     lastCode: codes[codes.length - 1].code,
   };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { error: `Unexpected error: ${message}` };
+  }
 };
 
 type SelectedItem = { id: string; title: string };
