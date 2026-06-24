@@ -39,7 +39,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "Code prefix is required." };
   }
 
-  // Step 1: create the function-based discount with eligible product config
+  // Generate codes upfront so the first one can be included in creation
+  const firstCode = `${prefix}${String(1).padStart(5, "0")}`;
+
+  // Step 1: create the function-based discount — first code must be included in creation
   const createRes = await admin.graphql(
     `#graphql
     mutation CreateBulkCodeDiscount($input: DiscountCodeAppInput!) {
@@ -55,6 +58,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           functionHandle: "discount-rejection-function-js",
           startsAt: new Date().toISOString(),
           appliesOncePerCustomer: false,
+          code: firstCode,
           metafields: [
             {
               namespace: "$app",
@@ -79,29 +83,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "Failed to create discount." };
   }
 
-  // Step 2: generate codes — prefix is used as-is (user includes separator if desired)
+  // Step 2: generate all codes upfront
   const codes = Array.from({ length: codeCount }, (_, i) => ({
     code: `${prefix}${String(i + 1).padStart(5, "0")}`,
   }));
 
-  const bulkRes = await admin.graphql(
-    `#graphql
-    mutation AddBulkCodes($discountId: ID!, $codes: [DiscountRedeemCodeInput!]!) {
-      discountRedeemCodeBulkAdd(discountId: $discountId, codes: $codes) {
-        bulkCreation { id status codesCount }
-        userErrors { field message }
-      }
-    }`,
-    { variables: { discountId, codes } }
-  );
+  // Step 3: bulk-add remaining codes (first was included in creation)
+  const remainingCodes = codes.slice(1);
+  if (remainingCodes.length > 0) {
+    const bulkRes = await admin.graphql(
+      `#graphql
+      mutation AddBulkCodes($discountId: ID!, $codes: [DiscountRedeemCodeInput!]!) {
+        discountRedeemCodeBulkAdd(discountId: $discountId, codes: $codes) {
+          bulkCreation { id status codesCount }
+          userErrors { field message }
+        }
+      }`,
+      { variables: { discountId, codes: remainingCodes } }
+    );
 
-  const bulkData = await bulkRes.json();
-  const bulkErrors = bulkData.data?.discountRedeemCodeBulkAdd?.userErrors ?? [];
-  if (bulkErrors.length > 0) {
-    return {
-      error: `Adding codes: ${bulkErrors.map((e: { message: string }) => e.message).join(", ")}`,
-      discountId,
-    };
+    const bulkData = await bulkRes.json();
+    const bulkErrors = bulkData.data?.discountRedeemCodeBulkAdd?.userErrors ?? [];
+    if (bulkErrors.length > 0) {
+      return {
+        error: `Adding codes: ${bulkErrors.map((e: { message: string }) => e.message).join(", ")}`,
+        discountId,
+      };
+    }
   }
 
   return {
