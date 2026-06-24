@@ -1,89 +1,71 @@
-import { useEffect } from "react";
-import type { LoaderFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import type { HeadersFunction } from "react-router";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const numericId = params.id;
-  const discountId = `gid://shopify/DiscountCodeApp/${numericId}`;
+  try {
+    const { admin } = await authenticate.admin(request);
+    const numericId = params.id;
+    const gid = `gid://shopify/DiscountCodeNode/${numericId}`;
 
-  const res = await admin.graphql(
-    `#graphql
-    query GetDiscount($id: ID!) {
-      discountNode(id: $id) {
-        id
-        discount {
-          ... on DiscountCodeApp {
-            title
-            startsAt
-            codes(first: 10) {
-              nodes { code }
-              pageInfo { hasNextPage }
+    const res = await admin.graphql(
+      `#graphql
+      query GetDiscount($id: ID!) {
+        discountNode(id: $id) {
+          discount {
+            ... on DiscountCodeApp {
+              title
             }
           }
         }
-      }
-    }`,
-    { variables: { id: discountId } }
-  );
+      }`,
+      { variables: { id: gid } }
+    );
 
-  const data = await res.json();
-  const discount = data.data?.discountNode?.discount;
+    const data = await res.json();
+    const title = data.data?.discountNode?.discount?.title ?? "Discount";
 
-  return {
-    discountId,
-    title: discount?.title ?? "Discount",
-    startsAt: discount?.startsAt ?? null,
-    codes: (discount?.codes?.nodes ?? []).map((n: { code: string }) => n.code),
-    hasMore: discount?.codes?.pageInfo?.hasNextPage ?? false,
-  };
+    return { numericId, title, error: null as string | null };
+  } catch (err: unknown) {
+    return {
+      numericId: params.id,
+      title: "Discount",
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 };
 
 export default function DiscountDetails() {
-  const { title, codes, hasMore, discountId } = useLoaderData<typeof loader>();
+  const { title, numericId, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
   return (
-    <s-page heading={title}>
+    <s-page heading={title ?? "Discount"}>
+      {error && (
+        <s-banner title="Error" tone="critical">
+          <s-paragraph>{error}</s-paragraph>
+        </s-banner>
+      )}
       <s-section heading="Discount codes">
         <s-stack direction="block" gap="base">
-          {codes.length === 0 ? (
-            <s-paragraph>
-              No codes found yet — bulk codes may still be processing. Refresh
-              in a moment.
-            </s-paragraph>
-          ) : (
-            <>
-              <s-paragraph>
-                Showing first {codes.length} codes{hasMore ? " (more exist)" : ""}.
-              </s-paragraph>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <s-stack direction="block" gap="tight">
-                  {codes.map((code: string) => (
-                    <s-text key={code}>{code}</s-text>
-                  ))}
-                </s-stack>
-              </s-box>
-            </>
-          )}
           <s-paragraph>
-            To see all codes and manage the discount, open the{" "}
-            <a
-              href={`https://admin.shopify.com/discounts/${discountId.split("/").pop()}`}
-              target="_top"
-            >
-              Shopify admin discount page
-            </a>
-            .
+            Bulk codes are processed asynchronously by Shopify and will appear
+            in the admin within a few seconds.
           </s-paragraph>
+          <s-paragraph>
+            To view or export all codes, open the discount in Shopify admin:
+          </s-paragraph>
+          <s-button
+            onClick={() => {
+              window.open(
+                `https://admin.shopify.com/store/bajio-development/discounts/${numericId}`,
+                "_top"
+              );
+            }}
+          >
+            View codes in Shopify admin
+          </s-button>
         </s-stack>
       </s-section>
       <s-stack direction="inline" gap="base">
