@@ -128,7 +128,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       `#graphql
       mutation AddBulkCodes($discountId: ID!, $codes: [DiscountRedeemCodeInput!]!) {
         discountRedeemCodeBulkAdd(discountId: $discountId, codes: $codes) {
-          bulkCreation { id status codesCount }
+          bulkCreation { id codesCount }
           userErrors { field message }
         }
       }`,
