@@ -28,9 +28,14 @@ export function cartLinesDiscountsGenerateRun(input) {
     return { operations: [] };
   }
 
+  // Normalize GIDs to numeric IDs for comparison (Functions API may return either format)
+  const numericIds = productIds.map((id) => id.split("/").pop());
+
   const eligibleLines = input.cart.lines.filter((line) => {
     const productId = line.merchandise?.product?.id;
-    return productId && productIds.includes(productId);
+    if (!productId) return false;
+    const numericProductId = productId.split("/").pop();
+    return numericIds.includes(numericProductId);
   });
 
   if (eligibleLines.length === 0) {
