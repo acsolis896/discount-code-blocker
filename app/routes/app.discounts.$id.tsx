@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, useNavigate } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -39,6 +40,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 export default function DiscountDetails() {
   const { title, numericId, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const shopify = useAppBridge();
 
   return (
     <s-page heading={title ?? "Discount"}>
@@ -57,12 +59,12 @@ export default function DiscountDetails() {
             To view or export all codes, open the discount in Shopify admin:
           </s-paragraph>
           <s-button
-            onClick={() => {
-              window.open(
-                `https://admin.shopify.com/store/bajio-development/discounts/${numericId}`,
-                "_top"
-              );
-            }}
+            onClick={() =>
+              shopify.navigate(
+                `shopify://admin/discounts/${numericId}`,
+                { target: "new" }
+              )
+            }
           >
             View codes in Shopify admin
           </s-button>
