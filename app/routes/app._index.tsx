@@ -58,7 +58,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           functionHandle: "discount-rejection-function-js",
           startsAt: new Date().toISOString(),
           appliesOncePerCustomer: false,
-          code: firstCode,
+          codes: [{ code: firstCode }],
           metafields: [
             {
               namespace: "$app",
