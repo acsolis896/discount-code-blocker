@@ -46,8 +46,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Step 1: create the function-based discount — first code must be included in creation
   const createRes = await admin.graphql(
     `#graphql
-    mutation CreateBulkCodeDiscount($input: DiscountCodeAppInput!, $codes: [DiscountRedeemCodeInput!]!) {
-      discountCodeAppCreate(codeAppDiscount: $input, codes: $codes) {
+    mutation CreateBulkCodeDiscount($input: DiscountCodeAppInput!) {
+      discountCodeAppCreate(codeAppDiscount: $input) {
         codeAppDiscount { discountId }
         userErrors { field message }
       }
@@ -59,6 +59,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           functionHandle: "discount-rejection-function-js",
           startsAt: new Date().toISOString(),
           appliesOncePerCustomer: false,
+          code: firstCode,
           metafields: [
             {
               namespace: "$app",
@@ -68,7 +69,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             },
           ],
         },
-        codes: [{ code: firstCode }],
       },
     }
   );
