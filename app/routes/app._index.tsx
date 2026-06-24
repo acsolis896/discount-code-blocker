@@ -40,6 +40,38 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "Code prefix is required." };
   }
 
+  // Expand collection IDs → product IDs so the function only checks productIds
+  let resolvedProductIds = [...productIds];
+  if (collectionIds.length > 0) {
+    for (const collectionId of collectionIds) {
+      let cursor: string | null = null;
+      do {
+        const colRes = await admin.graphql(
+          `#graphql
+          query CollectionProducts($id: ID!, $after: String) {
+            collection(id: $id) {
+              products(first: 250, after: $after) {
+                nodes { id }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }`,
+          { variables: { id: collectionId, after: cursor } }
+        );
+        const colData = await colRes.json();
+        const products = colData.data?.collection?.products;
+        for (const p of products?.nodes ?? []) {
+          if (!resolvedProductIds.includes(p.id)) resolvedProductIds.push(p.id);
+        }
+        cursor = products?.pageInfo?.hasNextPage ? products.pageInfo.endCursor : null;
+      } while (cursor);
+    }
+  }
+
+  if (resolvedProductIds.length === 0) {
+    return { error: "No products found in the selected collections." };
+  }
+
   // Generate codes upfront so the first one can be included in creation
   const firstCode = `${prefix}${String(1).padStart(5, "0")}`;
 
@@ -65,7 +97,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               namespace: "$app",
               key: "function-configuration",
               type: "json",
-              value: JSON.stringify({ productIds, collectionIds, percentage }),
+              value: JSON.stringify({ productIds: resolvedProductIds, percentage }),
             },
           ],
         },

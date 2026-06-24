@@ -7,35 +7,45 @@
         "lines": [
           {
             "id": "gid://shopify/CartLine/0",
+            "quantity": 2,
             "cost": {
-              "subtotalAmount": {
-                "amount": "100.0"
+              "amountPerQuantity": {
+                "amount": "50.0"
+              }
+            },
+            "merchandise": {
+              "product": {
+                "id": "gid://shopify/Product/123"
               }
             }
           }
         ]
       },
       "discount": {
-        "discountClasses": ["ORDER"]
-      }
+        "metafield": {
+          "value": "{\"productIds\":[\"gid://shopify/Product/123\"],\"percentage\":20}"
+        }
+      },
+      "enteredDiscountCodes": []
     },
-    "output": {
+    "expectedOutput": {
       "operations": [
         {
-          "orderDiscountsAdd": {
+          "productDiscountsAdd": {
             "candidates": [
               {
-                "message": "10% OFF ORDER",
+                "message": "20% off",
                 "targets": [
                   {
-                    "orderSubtotal": {
-                      "excludedCartLineIds": []
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/0",
+                      "quantity": 1
                     }
                   }
                 ],
                 "value": {
                   "percentage": {
-                    "value": 10.0
+                    "value": 20
                   }
                 }
               }

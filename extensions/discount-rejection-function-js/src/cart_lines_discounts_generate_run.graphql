@@ -12,11 +12,6 @@ query CartLinesDiscountsGenerateRunInput {
         ... on ProductVariant {
           product {
             id
-            collections(first: 10) {
-              nodes {
-                id
-              }
-            }
           }
         }
       }
