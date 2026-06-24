@@ -92,14 +92,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           startsAt: new Date().toISOString(),
           appliesOncePerCustomer: false,
           code: firstCode,
-          metafields: [
-            {
-              namespace: "$app",
-              key: "function-configuration",
-              type: "json",
-              value: JSON.stringify({ productIds: resolvedProductIds, percentage }),
-            },
-          ],
         },
       },
     }
@@ -116,7 +108,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "Failed to create discount." };
   }
 
-  // Step 2: generate all codes upfront
+  // Step 2: set function configuration metafield explicitly
+  const metafieldRes = await admin.graphql(
+    `#graphql
+    mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields { key namespace value }
+        userErrors { field message }
+      }
+    }`,
+    {
+      variables: {
+        metafields: [
+          {
+            ownerId: discountId,
+            namespace: "$app",
+            key: "function-configuration",
+            type: "json",
+            value: JSON.stringify({ productIds: resolvedProductIds, percentage }),
+          },
+        ],
+      },
+    }
+  );
+  const metafieldData = await metafieldRes.json();
+  const metafieldErrors = metafieldData.data?.metafieldsSet?.userErrors ?? [];
+  if (metafieldErrors.length > 0) {
+    return { error: `Saving configuration: ${metafieldErrors.map((e: { message: string }) => e.message).join(", ")}` };
+  }
+
+  // Step 4: generate all codes upfront
   const codes = Array.from({ length: codeCount }, (_, i) => ({
     code: `${prefix}${String(i + 1).padStart(5, "0")}`,
   }));
