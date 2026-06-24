@@ -1,4 +1,7 @@
 query CartLinesDiscountsGenerateRunInput {
+  enteredDiscountCodes {
+    code
+  }
   cart {
     lines {
       id
@@ -20,9 +23,6 @@ query CartLinesDiscountsGenerateRunInput {
   discount {
     metafield(namespace: "$app", key: "function-configuration") {
       value
-    }
-    codes {
-      code
     }
   }
 }

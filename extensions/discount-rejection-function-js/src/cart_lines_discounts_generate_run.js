@@ -11,7 +11,7 @@
  * @returns {CartLinesDiscountsGenerateRunResult}
  */
 export function cartLinesDiscountsGenerateRun(input) {
-  const discountCodes = (input.discount?.codes ?? []).map((c) => ({ code: c.code }));
+  const discountCodes = (input.enteredDiscountCodes ?? []).map((c) => ({ code: c.code }));
   const accept = { enteredDiscountCodesAccept: { codes: discountCodes } };
 
   const metafieldValue = input.discount?.metafield?.value;
