@@ -21,5 +21,8 @@ query CartLinesDiscountsGenerateRunInput {
     metafield(namespace: "$app", key: "function-configuration") {
       value
     }
+    codes {
+      code
+    }
   }
 }

@@ -11,21 +11,22 @@
  * @returns {CartLinesDiscountsGenerateRunResult}
  */
 export function cartLinesDiscountsGenerateRun(input) {
+  const discountCodes = (input.discount?.codes ?? []).map((c) => ({ code: c.code }));
+  const accept = { enteredDiscountCodesAccept: { codes: discountCodes } };
+
   const metafieldValue = input.discount?.metafield?.value;
-  if (!metafieldValue) {
-    return { operations: [] };
-  }
+  if (!metafieldValue) return { operations: [accept] };
 
   let config;
   try {
     config = JSON.parse(metafieldValue);
   } catch {
-    return { operations: [] };
+    return { operations: [accept] };
   }
 
   const { productIds, percentage } = config;
   if (!Array.isArray(productIds) || productIds.length === 0 || !percentage) {
-    return { operations: [] };
+    return { operations: [accept] };
   }
 
   // Normalize GIDs to numeric IDs for comparison (Functions API may return either format)
@@ -39,7 +40,7 @@ export function cartLinesDiscountsGenerateRun(input) {
   });
 
   if (eligibleLines.length === 0) {
-    return { operations: [] };
+    return { operations: [accept] };
   }
 
   const bestLine = eligibleLines.reduce((best, line) => {
@@ -50,24 +51,14 @@ export function cartLinesDiscountsGenerateRun(input) {
 
   return {
     operations: [
+      accept,
       {
         productDiscountsAdd: {
           candidates: [
             {
               message: `${percentage}% off`,
-              targets: [
-                {
-                  cartLine: {
-                    id: bestLine.id,
-                    quantity: 1,
-                  },
-                },
-              ],
-              value: {
-                percentage: {
-                  value: percentage,
-                },
-              },
+              targets: [{ cartLine: { id: bestLine.id, quantity: 1 } }],
+              value: { percentage: { value: percentage } },
             },
           ],
           selectionStrategy: "FIRST",
