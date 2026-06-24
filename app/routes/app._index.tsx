@@ -92,6 +92,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           startsAt: new Date().toISOString(),
           appliesOncePerCustomer: false,
           code: firstCode,
+          discountClasses: ["PRODUCT"],
         },
       },
     }
