@@ -20,7 +20,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const title = String(formData.get("title") || "Bulk Discount");
   const percentage = Number(formData.get("percentage") || 0);
-  const prefix = String(formData.get("prefix") || "DISCOUNT").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  // Keep hyphens and underscores; strip everything else; uppercase
+  const prefix = String(formData.get("prefix") || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9\-_]/g, "")
+    .replace(/^[\-_]+|[\-_]+$/g, ""); // trim leading/trailing separators
   const codeCount = Math.min(Math.max(Number(formData.get("codeCount") || 100), 1), 5000);
   const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
   const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
@@ -67,7 +71,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const createData = await createRes.json();
   const createErrors = createData.data?.discountCodeAppCreate?.userErrors ?? [];
   if (createErrors.length > 0) {
-    return { error: createErrors.map((e: { message: string }) => e.message).join(", ") };
+    return { error: `Creating discount: ${createErrors.map((e: { message: string }) => e.message).join(", ")}` };
   }
 
   const discountId = createData.data?.discountCodeAppCreate?.codeAppDiscount?.discountId;
@@ -75,9 +79,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "Failed to create discount." };
   }
 
-  // Step 2: generate codes with the prefix pattern
+  // Step 2: generate codes — prefix is used as-is (user includes separator if desired)
   const codes = Array.from({ length: codeCount }, (_, i) => ({
-    code: `${prefix}-${String(i + 1).padStart(5, "0")}`,
+    code: `${prefix}${String(i + 1).padStart(5, "0")}`,
   }));
 
   const bulkRes = await admin.graphql(
@@ -95,7 +99,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const bulkErrors = bulkData.data?.discountRedeemCodeBulkAdd?.userErrors ?? [];
   if (bulkErrors.length > 0) {
     return {
-      error: bulkErrors.map((e: { message: string }) => e.message).join(", "),
+      error: `Adding codes: ${bulkErrors.map((e: { message: string }) => e.message).join(", ")}`,
       discountId,
     };
   }
@@ -175,9 +179,11 @@ export default function Index() {
     fetcher.load("/app");
   }, [fetcher]);
 
-  const previewCode = prefix
-    ? `${prefix.toUpperCase().replace(/[^A-Z0-9]/g, "")}-00001`
-    : "";
+  const sanitizedPrefix = prefix
+    .toUpperCase()
+    .replace(/[^A-Z0-9\-_]/g, "")
+    .replace(/^[\-_]+|[\-_]+$/g, "");
+  const previewCode = sanitizedPrefix ? `${sanitizedPrefix}00001` : "";
 
   return (
     <s-page heading="Create Bulk Discount Codes">
