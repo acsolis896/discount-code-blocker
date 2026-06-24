@@ -23,14 +23,22 @@ export function cartLinesDiscountsGenerateRun(input) {
     return { operations: [] };
   }
 
-  const { productIds, percentage } = config;
-  if (!Array.isArray(productIds) || productIds.length === 0 || !percentage) {
+  const { productIds, collectionIds, percentage } = config;
+  const hasProducts = Array.isArray(productIds) && productIds.length > 0;
+  const hasCollections = Array.isArray(collectionIds) && collectionIds.length > 0;
+  if ((!hasProducts && !hasCollections) || !percentage) {
     return { operations: [] };
   }
 
   const eligibleLines = input.cart.lines.filter((line) => {
     const productId = line.merchandise?.product?.id;
-    return productId && productIds.includes(productId);
+    if (!productId) return false;
+    if (hasProducts && productIds.includes(productId)) return true;
+    if (hasCollections) {
+      const lineCollectionIds = (line.merchandise?.product?.collections?.nodes ?? []).map((c) => c.id);
+      return lineCollectionIds.some((cId) => collectionIds.includes(cId));
+    }
+    return false;
   });
 
   if (eligibleLines.length === 0) {

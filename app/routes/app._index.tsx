@@ -23,12 +23,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const prefix = String(formData.get("prefix") || "DISCOUNT").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const codeCount = Math.min(Math.max(Number(formData.get("codeCount") || 100), 1), 5000);
   const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
+  const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
 
   if (!percentage || percentage < 1 || percentage > 100) {
     return { error: "Percentage must be between 1 and 100." };
   }
-  if (productIds.length === 0) {
-    return { error: "Select at least one eligible product." };
+  if (productIds.length === 0 && collectionIds.length === 0) {
+    return { error: "Select at least one eligible product or collection." };
   }
   if (!prefix) {
     return { error: "Code prefix is required." };
@@ -55,7 +56,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               namespace: "$app",
               key: "function-configuration",
               type: "json",
-              value: JSON.stringify({ productIds, percentage }),
+              value: JSON.stringify({ productIds, collectionIds, percentage }),
             },
           ],
         },
@@ -110,7 +111,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   };
 };
 
-type SelectedProduct = { id: string; title: string };
+type SelectedItem = { id: string; title: string };
 
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
@@ -120,28 +121,34 @@ export default function Index() {
   const [percentage, setPercentage] = useState("20");
   const [prefix, setPrefix] = useState("");
   const [codeCount, setCodeCount] = useState("100");
-  const [selectedProducts, setSelectedProducts] = useState<SelectedProduct[]>([]);
+  const [selectionType, setSelectionType] = useState<"product" | "collection">("product");
+  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
 
   const isLoading = fetcher.state !== "idle";
   const result = fetcher.data as Record<string, unknown> | undefined;
   const hasError = result && "error" in result;
   const hasSuccess = result && "discountId" in result && !hasError;
 
-  const handlePickProducts = useCallback(async () => {
+  const handlePickItems = useCallback(async () => {
     const selected = await shopify.resourcePicker({
-      type: "product",
+      type: selectionType,
       multiple: true,
-      selectionIds: selectedProducts.map((p) => ({ id: p.id })),
+      selectionIds: selectedItems.map((p) => ({ id: p.id })),
     });
     if (selected) {
-      setSelectedProducts(
+      setSelectedItems(
         selected.map((p: { id: string; title: string }) => ({
           id: p.id,
           title: p.title,
         }))
       );
     }
-  }, [shopify, selectedProducts]);
+  }, [shopify, selectionType, selectedItems]);
+
+  const handleSelectionTypeChange = useCallback((type: "product" | "collection") => {
+    setSelectionType(type);
+    setSelectedItems([]);
+  }, []);
 
   const handleSubmit = useCallback(() => {
     const formData = new FormData();
@@ -149,16 +156,22 @@ export default function Index() {
     formData.set("percentage", percentage);
     formData.set("prefix", prefix);
     formData.set("codeCount", codeCount);
-    formData.set("productIds", JSON.stringify(selectedProducts.map((p) => p.id)));
+    if (selectionType === "product") {
+      formData.set("productIds", JSON.stringify(selectedItems.map((p) => p.id)));
+      formData.set("collectionIds", JSON.stringify([]));
+    } else {
+      formData.set("collectionIds", JSON.stringify(selectedItems.map((p) => p.id)));
+      formData.set("productIds", JSON.stringify([]));
+    }
     fetcher.submit(formData, { method: "POST" });
-  }, [fetcher, title, percentage, prefix, codeCount, selectedProducts]);
+  }, [fetcher, title, percentage, prefix, codeCount, selectionType, selectedItems]);
 
   const handleReset = useCallback(() => {
     setTitle("Bulk Discount");
     setPercentage("20");
     setPrefix("");
     setCodeCount("100");
-    setSelectedProducts([]);
+    setSelectedItems([]);
     fetcher.load("/app");
   }, [fetcher]);
 
@@ -241,18 +254,31 @@ export default function Index() {
         </s-form-layout>
       </s-section>
 
-      <s-section heading="Eligible products">
+      <s-section heading="Eligible items">
         <s-paragraph>
-          The discount will apply to the highest-priced eligible item in the
-          cart — 1 unit only.
+          The discount applies to the highest-priced eligible item in the cart — 1 unit only.
         </s-paragraph>
         <s-stack direction="block" gap="base">
-          <s-button onClick={handlePickProducts}>
-            {selectedProducts.length > 0
-              ? `${selectedProducts.length} product${selectedProducts.length > 1 ? "s" : ""} selected — change`
-              : "Select products"}
+          <s-stack direction="inline" gap="tight">
+            <s-button
+              variant={selectionType === "product" ? "primary" : "tertiary"}
+              onClick={() => handleSelectionTypeChange("product")}
+            >
+              Products
+            </s-button>
+            <s-button
+              variant={selectionType === "collection" ? "primary" : "tertiary"}
+              onClick={() => handleSelectionTypeChange("collection")}
+            >
+              Collections
+            </s-button>
+          </s-stack>
+          <s-button onClick={handlePickItems}>
+            {selectedItems.length > 0
+              ? `${selectedItems.length} ${selectionType}${selectedItems.length > 1 ? "s" : ""} selected — change`
+              : `Select ${selectionType}s`}
           </s-button>
-          {selectedProducts.length > 0 && (
+          {selectedItems.length > 0 && (
             <s-box
               padding="base"
               borderWidth="base"
@@ -260,7 +286,7 @@ export default function Index() {
               background="subdued"
             >
               <s-stack direction="block" gap="tight">
-                {selectedProducts.map((p) => (
+                {selectedItems.map((p) => (
                   <s-text key={p.id}>{p.title}</s-text>
                 ))}
               </s-stack>
@@ -274,7 +300,7 @@ export default function Index() {
           variant="primary"
           onClick={handleSubmit}
           {...(isLoading ? { loading: true } : {})}
-          disabled={!prefix || !percentage || selectedProducts.length === 0}
+          disabled={!prefix || !percentage || selectedItems.length === 0}
         >
           Create discount codes
         </s-button>
