@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useCallback } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -11,333 +11,277 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
-
   return null;
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
+  const formData = await request.formData();
 
+  const title = String(formData.get("title") || "Bulk Discount");
+  const percentage = Number(formData.get("percentage") || 0);
+  const prefix = String(formData.get("prefix") || "DISCOUNT").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const codeCount = Math.min(Math.max(Number(formData.get("codeCount") || 100), 1), 5000);
+  const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
 
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
+  if (!percentage || percentage < 1 || percentage > 100) {
+    return { error: "Percentage must be between 1 and 100." };
+  }
+  if (productIds.length === 0) {
+    return { error: "Select at least one eligible product." };
+  }
+  if (!prefix) {
+    return { error: "Code prefix is required." };
+  }
+
+  // Step 1: create the function-based discount with eligible product config
+  const createRes = await admin.graphql(
     `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-            demoInfo: metafield(namespace: "$app", key: "demo_info") {
-              jsonValue
-            }
-          }
-        }
-      }`,
+    mutation CreateBulkCodeDiscount($input: DiscountCodeAppInput!) {
+      discountCodeAppCreate(codeAppDiscount: $input) {
+        codeAppDiscount { discountId }
+        userErrors { field message }
+      }
+    }`,
     {
       variables: {
-        product: {
-          title: `${color} Snowboard`,
+        input: {
+          title,
+          functionHandle: "discount-rejection-function-js",
+          startsAt: new Date().toISOString(),
+          appliesOncePerCustomer: false,
           metafields: [
             {
               namespace: "$app",
-              key: "demo_info",
-              value: "Created by React Router Template",
+              key: "function-configuration",
+              type: "json",
+              value: JSON.stringify({ productIds, percentage }),
             },
           ],
         },
       },
-    },
+    }
   );
-  const responseJson = await response.json();
 
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
+  const createData = await createRes.json();
+  const createErrors = createData.data?.discountCodeAppCreate?.userErrors ?? [];
+  if (createErrors.length > 0) {
+    return { error: createErrors.map((e: { message: string }) => e.message).join(", ") };
+  }
 
-  const variantResponse = await admin.graphql(
+  const discountId = createData.data?.discountCodeAppCreate?.codeAppDiscount?.discountId;
+  if (!discountId) {
+    return { error: "Failed to create discount." };
+  }
+
+  // Step 2: generate codes with the prefix pattern
+  const codes = Array.from({ length: codeCount }, (_, i) => ({
+    code: `${prefix}-${String(i + 1).padStart(5, "0")}`,
+  }));
+
+  const bulkRes = await admin.graphql(
     `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
+    mutation AddBulkCodes($discountId: ID!, $codes: [DiscountRedeemCodeInput!]!) {
+      discountRedeemCodeBulkAdd(discountId: $discountId, codes: $codes) {
+        bulkCreation { id status codesCount }
+        userErrors { field message }
       }
     }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
+    { variables: { discountId, codes } }
   );
 
-  const variantResponseJson = await variantResponse.json();
-
-  const metaobjectResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpsertMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
-      metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
-        metaobject {
-          id
-          handle
-          title: field(key: "title") {
-            jsonValue
-          }
-          description: field(key: "description") {
-            jsonValue
-          }
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }`,
-    {
-      variables: {
-        handle: {
-          type: "$app:example",
-          handle: "demo-entry",
-        },
-        metaobject: {
-          fields: [
-            { key: "title", value: "Demo Entry" },
-            {
-              key: "description",
-              value:
-                "This metaobject was created by the Shopify app template to demonstrate the metaobject API.",
-            },
-          ],
-        },
-      },
-    },
-  );
-
-  const metaobjectResponseJson = await metaobjectResponse.json();
+  const bulkData = await bulkRes.json();
+  const bulkErrors = bulkData.data?.discountRedeemCodeBulkAdd?.userErrors ?? [];
+  if (bulkErrors.length > 0) {
+    return {
+      error: bulkErrors.map((e: { message: string }) => e.message).join(", "),
+      discountId,
+    };
+  }
 
   return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-    metaobject:
-      metaobjectResponseJson!.data!.metaobjectUpsert!.metaobject,
+    discountId,
+    title,
+    percentage,
+    prefix,
+    codeCount,
+    firstCode: codes[0].code,
+    lastCode: codes[codes.length - 1].code,
   };
 };
 
+type SelectedProduct = { id: string; title: string };
+
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
-
   const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
 
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
+  const [title, setTitle] = useState("Bulk Discount");
+  const [percentage, setPercentage] = useState("20");
+  const [prefix, setPrefix] = useState("");
+  const [codeCount, setCodeCount] = useState("100");
+  const [selectedProducts, setSelectedProducts] = useState<SelectedProduct[]>([]);
+
+  const isLoading = fetcher.state !== "idle";
+  const result = fetcher.data as Record<string, unknown> | undefined;
+  const hasError = result && "error" in result;
+  const hasSuccess = result && "discountId" in result && !hasError;
+
+  const handlePickProducts = useCallback(async () => {
+    const selected = await shopify.resourcePicker({
+      type: "product",
+      multiple: true,
+      selectionIds: selectedProducts.map((p) => ({ id: p.id })),
+    });
+    if (selected) {
+      setSelectedProducts(
+        selected.map((p: { id: string; title: string }) => ({
+          id: p.id,
+          title: p.title,
+        }))
+      );
     }
-  }, [fetcher.data?.product?.id, shopify]);
+  }, [shopify, selectedProducts]);
 
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const handleSubmit = useCallback(() => {
+    const formData = new FormData();
+    formData.set("title", title);
+    formData.set("percentage", percentage);
+    formData.set("prefix", prefix);
+    formData.set("codeCount", codeCount);
+    formData.set("productIds", JSON.stringify(selectedProducts.map((p) => p.id)));
+    fetcher.submit(formData, { method: "POST" });
+  }, [fetcher, title, percentage, prefix, codeCount, selectedProducts]);
+
+  const handleReset = useCallback(() => {
+    setTitle("Bulk Discount");
+    setPercentage("20");
+    setPrefix("");
+    setCodeCount("100");
+    setSelectedProducts([]);
+    fetcher.load("/app");
+  }, [fetcher]);
+
+  const previewCode = prefix
+    ? `${prefix.toUpperCase().replace(/[^A-Z0-9]/g, "")}-00001`
+    : "";
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
+    <s-page heading="Create Bulk Discount Codes">
+      {hasSuccess && (
+        <s-banner
+          title={`Discount created: ${result.title}`}
+          tone="success"
+          onDismiss={handleReset}
+        >
+          <s-paragraph>
+            {result.codeCount} codes queued •{" "}
+            {result.firstCode as string} → {result.lastCode as string} •{" "}
+            {result.percentage}% off eligible products
+          </s-paragraph>
+          <s-paragraph>
+            Discount ID: {result.discountId as string}
+          </s-paragraph>
+        </s-banner>
+      )}
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
+      {hasError && (
+        <s-banner title="Something went wrong" tone="critical">
+          <s-paragraph>{result.error as string}</s-paragraph>
+        </s-banner>
+      )}
+
+      <s-section heading="Discount details">
+        <s-form-layout>
+          <s-text-field
+            label="Title"
+            value={title}
+            onInput={(e: InputEvent) =>
+              setTitle((e.target as HTMLInputElement).value)
+            }
+            helpText="Shown in the Shopify admin discounts list"
+          />
+          <s-text-field
+            label="Percentage off"
+            type="number"
+            value={percentage}
+            min="1"
+            max="100"
+            suffix="%"
+            onInput={(e: InputEvent) =>
+              setPercentage((e.target as HTMLInputElement).value)
+            }
+          />
+        </s-form-layout>
       </s-section>
-      <s-section heading="Get started with products">
+
+      <s-section heading="Code generation">
+        <s-form-layout>
+          <s-text-field
+            label="Code prefix"
+            value={prefix}
+            onInput={(e: InputEvent) =>
+              setPrefix((e.target as HTMLInputElement).value)
+            }
+            helpText={
+              previewCode ? `Preview: ${previewCode}` : "Letters and numbers only, e.g. BAJIO"
+            }
+          />
+          <s-text-field
+            label="Number of codes"
+            type="number"
+            value={codeCount}
+            min="1"
+            max="5000"
+            onInput={(e: InputEvent) =>
+              setCodeCount((e.target as HTMLInputElement).value)
+            }
+            helpText="Maximum 5,000 per batch"
+          />
+        </s-form-layout>
+      </s-section>
+
+      <s-section heading="Eligible products">
         <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references. Includes a product{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metafields"
-            target="_blank"
-          >
-            metafield
-          </s-link>{" "}
-          and{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metaobjects"
-            target="_blank"
-          >
-            metaobject
-          </s-link>
-          .
+          The discount will apply to the highest-priced eligible item in the
+          cart — 1 unit only.
         </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
+        <s-stack direction="block" gap="base">
+          <s-button onClick={handlePickProducts}>
+            {selectedProducts.length > 0
+              ? `${selectedProducts.length} product${selectedProducts.length > 1 ? "s" : ""} selected — change`
+              : "Select products"}
           </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
+          {selectedProducts.length > 0 && (
+            <s-box
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+              background="subdued"
             >
-              Edit product
-            </s-button>
+              <s-stack direction="block" gap="tight">
+                {selectedProducts.map((p) => (
+                  <s-text key={p.id}>{p.title}</s-text>
+                ))}
+              </s-stack>
+            </s-box>
           )}
         </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
+      </s-section>
 
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>metaobjectUpsert mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>
-                    {JSON.stringify(fetcher.data.metaobject, null, 2)}
-                  </code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
+      <s-stack direction="inline" gap="base">
+        <s-button
+          variant="primary"
+          onClick={handleSubmit}
+          {...(isLoading ? { loading: true } : {})}
+          disabled={!prefix || !percentage || selectedProducts.length === 0}
+        >
+          Create discount codes
+        </s-button>
+        {hasSuccess && (
+          <s-button onClick={handleReset}>Create another</s-button>
         )}
-      </s-section>
-
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Custom data: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data"
-            target="_blank"
-          >
-            Metafields &amp; metaobjects
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
-
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
+      </s-stack>
     </s-page>
   );
 }
