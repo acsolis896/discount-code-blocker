@@ -39,8 +39,7 @@
         "metafield": {
           "value": "{\"productIds\":[\"gid://shopify/Product/123\",\"gid://shopify/Product/456\"],\"percentage\":15}"
         }
-      },
-      "enteredDiscountCodes": []
+      }
     },
     "expectedOutput": {
       "operations": [

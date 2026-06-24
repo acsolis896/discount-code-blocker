@@ -1,7 +1,4 @@
 query CartLinesDiscountsGenerateRunInput {
-  enteredDiscountCodes {
-    code
-  }
   cart {
     lines {
       id
