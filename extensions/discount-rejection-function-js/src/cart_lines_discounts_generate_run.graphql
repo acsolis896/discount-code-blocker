@@ -12,6 +12,7 @@ query CartLinesDiscountsGenerateRunInput {
         ... on ProductVariant {
           product {
             id
+            productType
           }
         }
       }
