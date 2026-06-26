@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
@@ -72,6 +73,17 @@ export default function DiscountDetails() {
   const navigate = useNavigate();
   const unusedCount = totalCount - usedCount;
 
+  const handleExport = useCallback(() => {
+    const rows = ["Code,Status", ...codes.map((c: RedeemCode) => `${c.code},${c.usageCount > 0 ? "Used" : "Unused"}`)];
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title ?? "discount-codes"}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [codes, title]);
+
   return (
     <s-page heading={title ?? "Discount"}>
       {error && (
@@ -133,6 +145,9 @@ export default function DiscountDetails() {
       </s-section>
 
       <s-stack direction="inline" gap="base">
+        <s-button variant="primary" onClick={handleExport} disabled={codes.length === 0}>
+          Export CSV
+        </s-button>
         <s-button
           onClick={() =>
             window.open(`https://${shop}/admin/discounts/${numericId}`, "_blank")
