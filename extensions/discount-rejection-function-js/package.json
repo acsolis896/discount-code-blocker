@@ -4,7 +4,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "../../node_modules/.bin/esbuild src/index.js --bundle --format=esm --target=es2020 --outfile=dist/function.js",
+    "build": "../../node_modules/.bin/esbuild src/index.js --bundle --format=esm --target=es2020 --outfile=dist/function.js && ~/.npm-global/lib/node_modules/@shopify/cli/bin/javy-7.0.1 build -o dist/function.wasm dist/function.js",
     "shopify": "npm exec -- shopify",
     "typegen": "npm exec -- shopify app function typegen",
     "preview": "npm exec -- shopify app function run",
