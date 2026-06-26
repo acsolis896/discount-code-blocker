@@ -290,7 +290,7 @@ export default function Index() {
       formData.set("collectionIds", JSON.stringify(selectedItems.map((p) => p.id)));
       formData.set("productIds", JSON.stringify([]));
     }
-    fetcher.submit(formData, { method: "POST" });
+    fetcher.submit(formData, { method: "POST", encType: "multipart/form-data" });
   }, [fetcher, title, percentage, codeMode, csvFile, prefix, codeCount, codeLength, selectionType, selectedItems]);
 
   const handleReset = useCallback(() => {
