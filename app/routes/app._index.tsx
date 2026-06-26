@@ -352,13 +352,16 @@ export default function Index() {
             suffix="%"
             onInput={(e: InputEvent) => setPercentage((e.target as HTMLInputElement).value)}
           />
-          <s-text-field
-            label="Expiration date"
-            type="date"
-            value={endsAt}
-            onInput={(e: InputEvent) => setEndsAt((e.target as HTMLInputElement).value)}
-            helpText="Optional — leave blank for no expiration"
-          />
+          <s-stack direction="block" gap="none">
+            <s-text emphasis="bold" style={{ fontSize: "14px" }}>Expiration date</s-text>
+            <input
+              type="date"
+              value={endsAt}
+              onChange={(e) => setEndsAt(e.target.value)}
+              style={{ marginTop: "4px", padding: "6px 8px", fontSize: "14px", borderRadius: "6px", border: "1px solid #ccc", width: "200px" }}
+            />
+            <s-text style={{ fontSize: "12px", color: "#6d7175", marginTop: "4px" }}>Optional — leave blank for no expiration</s-text>
+          </s-stack>
         </s-form-layout>
       </s-section>
 
