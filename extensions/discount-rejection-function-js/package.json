@@ -4,7 +4,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "echo 'Using pre-built function.wasm'",
+    "build": "../../node_modules/.bin/esbuild --bundle --format=esm --target=es2020 --outfile=dist/function.js --external:ShopifyFunction node_modules/@shopify/shopify_function/run.ts src/cart_lines_discounts_generate_run.js",
     "shopify": "npm exec -- shopify",
     "typegen": "npm exec -- shopify app function typegen",
     "preview": "npm exec -- shopify app function run",

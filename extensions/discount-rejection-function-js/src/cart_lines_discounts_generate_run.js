@@ -26,7 +26,6 @@ export function cartLinesDiscountsGenerateRun(input) {
     return { operations: [] };
   }
 
-  // Normalize GIDs to numeric IDs for comparison (Functions API may return either format)
   const numericIds = productIds.map((id) => id.split("/").pop());
 
   const eligibleLines = input.cart.lines.filter((line) => {
