@@ -3236,4 +3236,4 @@ export enum WeightUnit {
 export type CartLinesDiscountsGenerateRunInputVariables = Exact<{ [key: string]: never; }>;
 
 
-export type CartLinesDiscountsGenerateRunInput = { __typename?: 'Input', cart: { __typename?: 'Cart', lines: Array<{ __typename?: 'CartLine', merchandise: { __typename?: 'CustomProduct' } | { __typename?: 'ProductVariant', product: { __typename?: 'Product', productType?: string | null } } }> }, enteredDiscountCodes: Array<{ __typename?: 'EnteredDiscountCode', code: string, rejectable: boolean }> };
+export type CartLinesDiscountsGenerateRunInput = { __typename?: 'Input', cart: { __typename?: 'Cart', lines: Array<{ __typename?: 'CartLine', id: string, quantity: number, cost: { __typename?: 'CartLineCost', amountPerQuantity: { __typename?: 'MoneyV2', amount: any } }, merchandise: { __typename?: 'CustomProduct' } | { __typename?: 'ProductVariant', product: { __typename?: 'Product', id: string } } }> }, discount: { __typename?: 'Discount', metafield?: { __typename?: 'Metafield', value: string } | null } };

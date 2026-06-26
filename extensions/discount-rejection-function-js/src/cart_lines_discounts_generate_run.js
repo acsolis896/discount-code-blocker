@@ -4,25 +4,10 @@
  */
 
 /**
- * Applies a percentage discount to 1 unit of the highest-priced eligible product.
- * Eligible product IDs and the percentage are read from the discount's metafield.
- *
  * @param {RunInput} input
  * @returns {CartLinesDiscountsGenerateRunResult}
  */
 export function cartLinesDiscountsGenerateRun(input) {
-  // DEBUG: apply 50% to first line unconditionally
-  const first = input.cart.lines[0];
-  if (first) {
-    return {
-      operations: [{
-        productDiscountsAdd: {
-          candidates: [{ message: "50% off", targets: [{ cartLine: { id: first.id, quantity: 1 } }], value: { percentage: { value: 50.0 } } }],
-          selectionStrategy: "FIRST",
-        },
-      }],
-    };
-  }
   const metafieldValue = input.discount?.metafield?.value;
   if (!metafieldValue) return { operations: [] };
 
@@ -55,15 +40,17 @@ export function cartLinesDiscountsGenerateRun(input) {
     return price > bestPrice ? line : best;
   });
 
+  const pct = Number(percentage);
+
   return {
     operations: [
       {
         productDiscountsAdd: {
           candidates: [
             {
-              message: `${percentage}% off`,
+              message: pct + "% off",
               targets: [{ cartLine: { id: bestLine.id, quantity: 1 } }],
-              value: { percentage: { value: percentage } },
+              value: { percentage: { value: pct } },
             },
           ],
           selectionStrategy: "FIRST",
