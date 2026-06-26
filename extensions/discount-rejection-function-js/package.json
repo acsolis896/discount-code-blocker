@@ -4,7 +4,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "../../node_modules/.bin/esbuild src/index.js --bundle --format=esm --target=es2020 --outfile=dist/function.js",
+    "build": "npm exec -- shopify app function build",
     "shopify": "npm exec -- shopify",
     "typegen": "npm exec -- shopify app function typegen",
     "preview": "npm exec -- shopify app function run",
