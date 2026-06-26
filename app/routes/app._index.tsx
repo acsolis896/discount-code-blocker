@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -14,174 +14,203 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return null;
 };
 
+function parseCSVCodes(text: string): string[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((h) => h.trim().replace(/^["']|["']$/g, "").toLowerCase());
+  const codeIdx = headers.indexOf("code");
+  if (codeIdx === -1) return [];
+  return lines
+    .slice(1)
+    .map((line) => {
+      const cols = line.split(",");
+      return cols[codeIdx]?.trim().replace(/^["']|["']$/g, "").toUpperCase() ?? "";
+    })
+    .filter(Boolean);
+}
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
-  const { admin } = await authenticate.admin(request);
-  const formData = await request.formData();
+    const { admin } = await authenticate.admin(request);
+    const formData = await request.formData();
 
-  const title = String(formData.get("title") || "Bulk Discount");
-  const percentage = Number(formData.get("percentage") || 0);
-  // Keep hyphens and underscores; strip everything else; uppercase
-  const prefix = String(formData.get("prefix") || "")
-    .toUpperCase()
-    .replace(/[^A-Z0-9\-_]/g, "")
-    .replace(/^[\-_]+|[\-_]+$/g, ""); // trim leading/trailing separators
-  const codeCount = Math.min(Math.max(Number(formData.get("codeCount") || 100), 1), 5000);
-  const codeLength = Math.min(Math.max(Number(formData.get("codeLength") || 6), 4), 12);
-  const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
-  const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
+    const title = String(formData.get("title") || "Bulk Discount");
+    const percentage = Number(formData.get("percentage") || 0);
+    const codeMode = String(formData.get("codeMode") || "generate");
+    const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
+    const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
 
-  if (!percentage || percentage < 1 || percentage > 100) {
-    return { error: "Percentage must be between 1 and 100." };
-  }
-  if (productIds.length === 0 && collectionIds.length === 0) {
-    return { error: "Select at least one eligible product or collection." };
-  }
-  if (!prefix) {
-    return { error: "Code prefix is required." };
-  }
+    if (!percentage || percentage < 1 || percentage > 100) {
+      return { error: "Percentage must be between 1 and 100." };
+    }
+    if (productIds.length === 0 && collectionIds.length === 0) {
+      return { error: "Select at least one eligible product or collection." };
+    }
 
-  // Expand collection IDs → product IDs so the function only checks productIds
-  let resolvedProductIds = [...productIds];
-  if (collectionIds.length > 0) {
-    for (const collectionId of collectionIds) {
-      let cursor: string | null = null;
-      do {
-        const colRes = await admin.graphql(
-          `#graphql
-          query CollectionProducts($id: ID!, $after: String) {
-            collection(id: $id) {
-              products(first: 250, after: $after) {
-                nodes { id }
-                pageInfo { hasNextPage endCursor }
+    // Build the codes list
+    let finalCodes: string[];
+
+    if (codeMode === "import") {
+      const csvFile = formData.get("csvFile");
+      if (!csvFile || typeof csvFile === "string") {
+        return { error: "Please upload a CSV file." };
+      }
+      const text = await (csvFile as File).text();
+      const parsed = parseCSVCodes(text);
+      if (parsed.length === 0) {
+        return { error: 'No codes found. Make sure the CSV has a column named "Code".' };
+      }
+      if (parsed.length > 5000) {
+        return { error: "Maximum 5,000 codes per import." };
+      }
+      finalCodes = parsed;
+    } else {
+      const prefix = String(formData.get("prefix") || "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9\-_]/g, "")
+        .replace(/^[\-_]+|[\-_]+$/g, "");
+      const codeCount = Math.min(Math.max(Number(formData.get("codeCount") || 100), 1), 5000);
+      const codeLength = Math.min(Math.max(Number(formData.get("codeLength") || 6), 4), 12);
+
+      if (!prefix) return { error: "Code prefix is required." };
+
+      const randomSuffix = () => {
+        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        let s = "";
+        for (let i = 0; i < codeLength; i++) s += chars[Math.floor(Math.random() * chars.length)];
+        return s;
+      };
+      const codeSet = new Set<string>();
+      while (codeSet.size < codeCount) codeSet.add(`${prefix}-${randomSuffix()}`);
+      finalCodes = Array.from(codeSet);
+    }
+
+    // Expand collection IDs → product IDs
+    let resolvedProductIds = [...productIds];
+    if (collectionIds.length > 0) {
+      for (const collectionId of collectionIds) {
+        let cursor: string | null = null;
+        do {
+          const colRes = await admin.graphql(
+            `#graphql
+            query CollectionProducts($id: ID!, $after: String) {
+              collection(id: $id) {
+                products(first: 250, after: $after) {
+                  nodes { id }
+                  pageInfo { hasNextPage endCursor }
+                }
               }
-            }
-          }`,
-          { variables: { id: collectionId, after: cursor } }
-        );
-        const colData = await colRes.json();
-        const products = colData.data?.collection?.products;
-        for (const p of products?.nodes ?? []) {
-          if (!resolvedProductIds.includes(p.id)) resolvedProductIds.push(p.id);
-        }
-        cursor = products?.pageInfo?.hasNextPage ? products.pageInfo.endCursor : null;
-      } while (cursor);
-    }
-  }
-
-  if (resolvedProductIds.length === 0) {
-    return { error: "No products found in the selected collections." };
-  }
-
-  const randomSuffix = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let s = "";
-    for (let i = 0; i < codeLength; i++) s += chars[Math.floor(Math.random() * chars.length)];
-    return s;
-  };
-
-  // Generate unique random codes
-  const codeSet = new Set<string>();
-  while (codeSet.size < codeCount) codeSet.add(`${prefix}-${randomSuffix()}`);
-  const generatedCodes = Array.from(codeSet);
-  const firstCode = generatedCodes[0];
-
-  // Step 1: create the function-based discount — first code must be included in creation
-  const createRes = await admin.graphql(
-    `#graphql
-    mutation CreateBulkCodeDiscount($input: DiscountCodeAppInput!) {
-      discountCodeAppCreate(codeAppDiscount: $input) {
-        codeAppDiscount { discountId }
-        userErrors { field message }
+            }`,
+            { variables: { id: collectionId, after: cursor } }
+          );
+          const colData = await colRes.json();
+          const products = colData.data?.collection?.products;
+          for (const p of products?.nodes ?? []) {
+            if (!resolvedProductIds.includes(p.id)) resolvedProductIds.push(p.id);
+          }
+          cursor = products?.pageInfo?.hasNextPage ? products.pageInfo.endCursor : null;
+        } while (cursor);
       }
-    }`,
-    {
-      variables: {
-        input: {
-          title,
-          functionHandle: "discount-rejection-function-js",
-          startsAt: new Date().toISOString(),
-          appliesOncePerCustomer: false,
-          code: firstCode,
-          discountClasses: ["PRODUCT"],
-        },
-      },
     }
-  );
 
-  const createData = await createRes.json();
-  const createErrors = createData.data?.discountCodeAppCreate?.userErrors ?? [];
-  if (createErrors.length > 0) {
-    return { error: `Creating discount: ${createErrors.map((e: { message: string }) => e.message).join(", ")}` };
-  }
-
-  const discountId = createData.data?.discountCodeAppCreate?.codeAppDiscount?.discountId;
-  if (!discountId) {
-    return { error: "Failed to create discount." };
-  }
-
-  // Step 2: set function configuration metafield explicitly
-  const metafieldRes = await admin.graphql(
-    `#graphql
-    mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
-      metafieldsSet(metafields: $metafields) {
-        metafields { key namespace value }
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        metafields: [
-          {
-            ownerId: discountId,
-            namespace: "$app",
-            key: "function-configuration",
-            type: "json",
-            value: JSON.stringify({ productIds: resolvedProductIds, percentage }),
-          },
-        ],
-      },
+    if (resolvedProductIds.length === 0) {
+      return { error: "No products found in the selected collections." };
     }
-  );
-  const metafieldData = await metafieldRes.json();
-  const metafieldErrors = metafieldData.data?.metafieldsSet?.userErrors ?? [];
-  if (metafieldErrors.length > 0) {
-    return { error: `Saving configuration: ${metafieldErrors.map((e: { message: string }) => e.message).join(", ")}` };
-  }
 
-  // Step 3: bulk-add remaining codes (first was included in creation)
-  const codes = generatedCodes.map((code) => ({ code }));
-  const remainingCodes = codes.slice(1);
-  if (remainingCodes.length > 0) {
-    const bulkRes = await admin.graphql(
+    const firstCode = finalCodes[0];
+
+    // Step 1: create the discount with the first code
+    const createRes = await admin.graphql(
       `#graphql
-      mutation AddBulkCodes($discountId: ID!, $codes: [DiscountRedeemCodeInput!]!) {
-        discountRedeemCodeBulkAdd(discountId: $discountId, codes: $codes) {
-          bulkCreation { id codesCount }
+      mutation CreateBulkCodeDiscount($input: DiscountCodeAppInput!) {
+        discountCodeAppCreate(codeAppDiscount: $input) {
+          codeAppDiscount { discountId }
           userErrors { field message }
         }
       }`,
-      { variables: { discountId, codes: remainingCodes } }
+      {
+        variables: {
+          input: {
+            title,
+            functionHandle: "discount-rejection-function-js",
+            startsAt: new Date().toISOString(),
+            appliesOncePerCustomer: false,
+            code: firstCode,
+            discountClasses: ["PRODUCT"],
+          },
+        },
+      }
     );
 
-    const bulkData = await bulkRes.json();
-    const bulkErrors = bulkData.data?.discountRedeemCodeBulkAdd?.userErrors ?? [];
-    if (bulkErrors.length > 0) {
-      return {
-        error: `Adding codes: ${bulkErrors.map((e: { message: string }) => e.message).join(", ")}`,
-        discountId,
-      };
+    const createData = await createRes.json();
+    const createErrors = createData.data?.discountCodeAppCreate?.userErrors ?? [];
+    if (createErrors.length > 0) {
+      return { error: `Creating discount: ${createErrors.map((e: { message: string }) => e.message).join(", ")}` };
     }
-  }
 
-  return {
-    discountId,
-    title,
-    percentage,
-    prefix,
-    codeCount,
-    firstCode: codes[0].code,
-  };
+    const discountId = createData.data?.discountCodeAppCreate?.codeAppDiscount?.discountId;
+    if (!discountId) return { error: "Failed to create discount." };
+
+    // Step 2: save function configuration metafield
+    const metafieldRes = await admin.graphql(
+      `#graphql
+      mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields { key namespace value }
+          userErrors { field message }
+        }
+      }`,
+      {
+        variables: {
+          metafields: [
+            {
+              ownerId: discountId,
+              namespace: "$app",
+              key: "function-configuration",
+              type: "json",
+              value: JSON.stringify({ productIds: resolvedProductIds, percentage }),
+            },
+          ],
+        },
+      }
+    );
+    const metafieldData = await metafieldRes.json();
+    const metafieldErrors = metafieldData.data?.metafieldsSet?.userErrors ?? [];
+    if (metafieldErrors.length > 0) {
+      return { error: `Saving configuration: ${metafieldErrors.map((e: { message: string }) => e.message).join(", ")}` };
+    }
+
+    // Step 3: bulk-add remaining codes
+    const remainingCodes = finalCodes.slice(1).map((code) => ({ code }));
+    if (remainingCodes.length > 0) {
+      const bulkRes = await admin.graphql(
+        `#graphql
+        mutation AddBulkCodes($discountId: ID!, $codes: [DiscountRedeemCodeInput!]!) {
+          discountRedeemCodeBulkAdd(discountId: $discountId, codes: $codes) {
+            bulkCreation { id codesCount }
+            userErrors { field message }
+          }
+        }`,
+        { variables: { discountId, codes: remainingCodes } }
+      );
+
+      const bulkData = await bulkRes.json();
+      const bulkErrors = bulkData.data?.discountRedeemCodeBulkAdd?.userErrors ?? [];
+      if (bulkErrors.length > 0) {
+        return {
+          error: `Adding codes: ${bulkErrors.map((e: { message: string }) => e.message).join(", ")}`,
+          discountId,
+        };
+      }
+    }
+
+    return {
+      discountId,
+      title,
+      percentage,
+      codeCount: finalCodes.length,
+      firstCode,
+    };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return { error: `Unexpected error: ${message}` };
@@ -193,12 +222,16 @@ type SelectedItem = { id: string; title: string };
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState("Bulk Discount");
   const [percentage, setPercentage] = useState("20");
+  const [codeMode, setCodeMode] = useState<"generate" | "import">("generate");
   const [prefix, setPrefix] = useState("");
   const [codeCount, setCodeCount] = useState("100");
   const [codeLength, setCodeLength] = useState("6");
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<{ count: number; sample: string } | null>(null);
   const [selectionType, setSelectionType] = useState<"product" | "collection">("product");
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
 
@@ -214,12 +247,7 @@ export default function Index() {
       selectionIds: selectedItems.map((p) => ({ id: p.id })),
     });
     if (selected) {
-      setSelectedItems(
-        selected.map((p: { id: string; title: string }) => ({
-          id: p.id,
-          title: p.title,
-        }))
-      );
+      setSelectedItems(selected.map((p: { id: string; title: string }) => ({ id: p.id, title: p.title })));
     }
   }, [shopify, selectionType, selectedItems]);
 
@@ -228,13 +256,28 @@ export default function Index() {
     setSelectedItems([]);
   }, []);
 
+  const handleFileChange = useCallback(async (e: Event) => {
+    const file = (e.target as HTMLInputElement).files?.[0] ?? null;
+    setCsvFile(file);
+    if (!file) { setCsvPreview(null); return; }
+    const text = await file.text();
+    const codes = parseCSVCodes(text);
+    setCsvPreview(codes.length > 0 ? { count: codes.length, sample: codes[0] } : null);
+    if (codes.length === 0) setCsvFile(null);
+  }, []);
+
   const handleSubmit = useCallback(() => {
     const formData = new FormData();
     formData.set("title", title);
     formData.set("percentage", percentage);
-    formData.set("prefix", prefix);
-    formData.set("codeCount", codeCount);
-    formData.set("codeLength", codeLength);
+    formData.set("codeMode", codeMode);
+    if (codeMode === "import" && csvFile) {
+      formData.set("csvFile", csvFile);
+    } else {
+      formData.set("prefix", prefix);
+      formData.set("codeCount", codeCount);
+      formData.set("codeLength", codeLength);
+    }
     if (selectionType === "product") {
       formData.set("productIds", JSON.stringify(selectedItems.map((p) => p.id)));
       formData.set("collectionIds", JSON.stringify([]));
@@ -243,40 +286,40 @@ export default function Index() {
       formData.set("productIds", JSON.stringify([]));
     }
     fetcher.submit(formData, { method: "POST" });
-  }, [fetcher, title, percentage, prefix, codeCount, selectionType, selectedItems]);
+  }, [fetcher, title, percentage, codeMode, csvFile, prefix, codeCount, codeLength, selectionType, selectedItems]);
 
   const handleReset = useCallback(() => {
     setTitle("Bulk Discount");
     setPercentage("20");
+    setCodeMode("generate");
     setPrefix("");
     setCodeCount("100");
     setCodeLength("6");
+    setCsvFile(null);
+    setCsvPreview(null);
     setSelectedItems([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     fetcher.load("/app");
   }, [fetcher]);
 
-  const sanitizedPrefix = prefix
-    .toUpperCase()
-    .replace(/[^A-Z0-9\-_]/g, "")
-    .replace(/^[\-_]+|[\-_]+$/g, "");
+  const sanitizedPrefix = prefix.toUpperCase().replace(/[^A-Z0-9\-_]/g, "").replace(/^[\-_]+|[\-_]+$/g, "");
   const previewSuffix = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".slice(0, Number(codeLength) || 6);
   const previewCode = sanitizedPrefix ? `${sanitizedPrefix}-${previewSuffix}` : "";
+
+  const canSubmit =
+    !!percentage &&
+    selectedItems.length > 0 &&
+    (codeMode === "import" ? !!csvFile && !!csvPreview : !!prefix);
 
   return (
     <s-page heading="Create Bulk Discount Codes">
       {hasSuccess && (
-        <s-banner
-          title={`Discount created: ${result.title}`}
-          tone="success"
-          onDismiss={handleReset}
-        >
+        <s-banner title={`Discount created: ${result.title}`} tone="success" onDismiss={handleReset}>
           <s-paragraph>
             {result.codeCount} codes queued • e.g. {result.firstCode as string} •{" "}
             {result.percentage}% off eligible products
           </s-paragraph>
-          <s-paragraph>
-            Discount ID: {result.discountId as string}
-          </s-paragraph>
+          <s-paragraph>Discount ID: {result.discountId as string}</s-paragraph>
         </s-banner>
       )}
 
@@ -291,9 +334,7 @@ export default function Index() {
           <s-text-field
             label="Title"
             value={title}
-            onInput={(e: InputEvent) =>
-              setTitle((e.target as HTMLInputElement).value)
-            }
+            onInput={(e: InputEvent) => setTitle((e.target as HTMLInputElement).value)}
             helpText="Shown in the Shopify admin discounts list"
           />
           <s-text-field
@@ -303,48 +344,82 @@ export default function Index() {
             min="1"
             max="100"
             suffix="%"
-            onInput={(e: InputEvent) =>
-              setPercentage((e.target as HTMLInputElement).value)
-            }
+            onInput={(e: InputEvent) => setPercentage((e.target as HTMLInputElement).value)}
           />
         </s-form-layout>
       </s-section>
 
-      <s-section heading="Code generation">
-        <s-form-layout>
-          <s-text-field
-            label="Code prefix"
-            value={prefix}
-            onInput={(e: InputEvent) =>
-              setPrefix((e.target as HTMLInputElement).value)
-            }
-            helpText={
-              previewCode ? `Preview: ${previewCode}` : "Letters and numbers only, e.g. BAJIO"
-            }
-          />
-          <s-text-field
-            label="Number of codes"
-            type="number"
-            value={codeCount}
-            min="1"
-            max="5000"
-            onInput={(e: InputEvent) =>
-              setCodeCount((e.target as HTMLInputElement).value)
-            }
-            helpText="Maximum 5,000 per batch"
-          />
-          <s-text-field
-            label="Code length"
-            type="number"
-            value={codeLength}
-            min="4"
-            max="12"
-            onInput={(e: InputEvent) =>
-              setCodeLength((e.target as HTMLInputElement).value)
-            }
-            helpText="Number of random characters after the prefix (4–12)"
-          />
-        </s-form-layout>
+      <s-section heading="Codes">
+        <s-stack direction="block" gap="base">
+          <s-stack direction="inline" gap="tight">
+            <s-button
+              variant={codeMode === "generate" ? "primary" : "tertiary"}
+              onClick={() => setCodeMode("generate")}
+            >
+              Generate randomly
+            </s-button>
+            <s-button
+              variant={codeMode === "import" ? "primary" : "tertiary"}
+              onClick={() => setCodeMode("import")}
+            >
+              Import from CSV
+            </s-button>
+          </s-stack>
+
+          {codeMode === "generate" && (
+            <s-form-layout>
+              <s-text-field
+                label="Code prefix"
+                value={prefix}
+                onInput={(e: InputEvent) => setPrefix((e.target as HTMLInputElement).value)}
+                helpText={previewCode ? `Preview: ${previewCode}` : "Letters and numbers only, e.g. BAJIO"}
+              />
+              <s-text-field
+                label="Number of codes"
+                type="number"
+                value={codeCount}
+                min="1"
+                max="5000"
+                onInput={(e: InputEvent) => setCodeCount((e.target as HTMLInputElement).value)}
+                helpText="Maximum 5,000 per batch"
+              />
+              <s-text-field
+                label="Code length"
+                type="number"
+                value={codeLength}
+                min="4"
+                max="12"
+                onInput={(e: InputEvent) => setCodeLength((e.target as HTMLInputElement).value)}
+                helpText="Number of random characters after the prefix (4–12)"
+              />
+            </s-form-layout>
+          )}
+
+          {codeMode === "import" && (
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                Upload a CSV file with a <strong>Code</strong> column. Each row becomes one discount code.
+              </s-paragraph>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileChange as unknown as React.ChangeEventHandler<HTMLInputElement>}
+                style={{ fontSize: "14px" }}
+              />
+              {csvPreview && (
+                <s-banner tone="success" title={`${csvPreview.count} codes detected`}>
+                  <s-paragraph>First code: {csvPreview.sample}</s-paragraph>
+                </s-banner>
+              )}
+              {csvFile && !csvPreview && (
+                <s-banner tone="critical" title='No "Code" column found'>
+                  <s-paragraph>Make sure the CSV has a header row with a column named exactly "Code".</s-paragraph>
+                </s-banner>
+              )}
+            </s-stack>
+          )}
+        </s-stack>
       </s-section>
 
       <s-section heading="Eligible items">
@@ -372,12 +447,7 @@ export default function Index() {
               : `Select ${selectionType}s`}
           </s-button>
           {selectedItems.length > 0 && (
-            <s-box
-              padding="base"
-              borderWidth="base"
-              borderRadius="base"
-              background="subdued"
-            >
+            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
               <s-stack direction="block" gap="tight">
                 {selectedItems.map((p) => (
                   <s-text key={p.id}>{p.title}</s-text>
@@ -393,13 +463,11 @@ export default function Index() {
           variant="primary"
           onClick={handleSubmit}
           {...(isLoading ? { loading: true } : {})}
-          disabled={!prefix || !percentage || selectedItems.length === 0}
+          disabled={!canSubmit}
         >
           Create discount codes
         </s-button>
-        {hasSuccess && (
-          <s-button onClick={handleReset}>Create another</s-button>
-        )}
+        {hasSuccess && <s-button onClick={handleReset}>Create another</s-button>}
       </s-stack>
     </s-page>
   );
