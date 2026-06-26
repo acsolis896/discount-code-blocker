@@ -27,6 +27,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     .replace(/[^A-Z0-9\-_]/g, "")
     .replace(/^[\-_]+|[\-_]+$/g, ""); // trim leading/trailing separators
   const codeCount = Math.min(Math.max(Number(formData.get("codeCount") || 100), 1), 5000);
+  const codeLength = Math.min(Math.max(Number(formData.get("codeLength") || 6), 4), 12);
   const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
   const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
 
@@ -75,7 +76,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const randomSuffix = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let s = "";
-    for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < codeLength; i++) s += chars[Math.floor(Math.random() * chars.length)];
     return s;
   };
 
@@ -197,6 +198,7 @@ export default function Index() {
   const [percentage, setPercentage] = useState("20");
   const [prefix, setPrefix] = useState("");
   const [codeCount, setCodeCount] = useState("100");
+  const [codeLength, setCodeLength] = useState("6");
   const [selectionType, setSelectionType] = useState<"product" | "collection">("product");
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
 
@@ -232,6 +234,7 @@ export default function Index() {
     formData.set("percentage", percentage);
     formData.set("prefix", prefix);
     formData.set("codeCount", codeCount);
+    formData.set("codeLength", codeLength);
     if (selectionType === "product") {
       formData.set("productIds", JSON.stringify(selectedItems.map((p) => p.id)));
       formData.set("collectionIds", JSON.stringify([]));
@@ -247,6 +250,7 @@ export default function Index() {
     setPercentage("20");
     setPrefix("");
     setCodeCount("100");
+    setCodeLength("6");
     setSelectedItems([]);
     fetcher.load("/app");
   }, [fetcher]);
@@ -255,7 +259,8 @@ export default function Index() {
     .toUpperCase()
     .replace(/[^A-Z0-9\-_]/g, "")
     .replace(/^[\-_]+|[\-_]+$/g, "");
-  const previewCode = sanitizedPrefix ? `${sanitizedPrefix}-A3X9K2` : "";
+  const previewSuffix = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".slice(0, Number(codeLength) || 6);
+  const previewCode = sanitizedPrefix ? `${sanitizedPrefix}-${previewSuffix}` : "";
 
   return (
     <s-page heading="Create Bulk Discount Codes">
@@ -327,6 +332,17 @@ export default function Index() {
               setCodeCount((e.target as HTMLInputElement).value)
             }
             helpText="Maximum 5,000 per batch"
+          />
+          <s-text-field
+            label="Code length"
+            type="number"
+            value={codeLength}
+            min="4"
+            max="12"
+            onInput={(e: InputEvent) =>
+              setCodeLength((e.target as HTMLInputElement).value)
+            }
+            helpText="Number of random characters after the prefix (4–12)"
           />
         </s-form-layout>
       </s-section>
