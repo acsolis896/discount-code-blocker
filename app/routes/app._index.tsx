@@ -37,6 +37,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const title = String(formData.get("title") || "Bulk Discount");
     const percentage = Number(formData.get("percentage") || 0);
     const codeMode = String(formData.get("codeMode") || "generate");
+    const endsAtRaw = String(formData.get("endsAt") || "");
+    const endsAt = endsAtRaw ? new Date(endsAtRaw).toISOString() : null;
     const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
     const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
 
@@ -134,6 +136,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             title,
             functionHandle: "discount-rejection-function-js",
             startsAt: new Date().toISOString(),
+            ...(endsAt ? { endsAt } : {}),
             appliesOncePerCustomer: false,
             code: firstCode,
             discountClasses: ["PRODUCT"],
@@ -227,6 +230,7 @@ export default function Index() {
   const [title, setTitle] = useState("Bulk Discount");
   const [percentage, setPercentage] = useState("20");
   const [codeMode, setCodeMode] = useState<"generate" | "import">("generate");
+  const [endsAt, setEndsAt] = useState("");
   const [prefix, setPrefix] = useState("");
   const [codeCount, setCodeCount] = useState("100");
   const [codeLength, setCodeLength] = useState("6");
@@ -271,6 +275,7 @@ export default function Index() {
     formData.set("title", title);
     formData.set("percentage", percentage);
     formData.set("codeMode", codeMode);
+    formData.set("endsAt", endsAt);
     if (codeMode === "import" && csvFile) {
       formData.set("csvFile", csvFile);
     } else {
@@ -292,6 +297,7 @@ export default function Index() {
     setTitle("Bulk Discount");
     setPercentage("20");
     setCodeMode("generate");
+    setEndsAt("");
     setPrefix("");
     setCodeCount("100");
     setCodeLength("6");
@@ -345,6 +351,13 @@ export default function Index() {
             max="100"
             suffix="%"
             onInput={(e: InputEvent) => setPercentage((e.target as HTMLInputElement).value)}
+          />
+          <s-text-field
+            label="Expiration date"
+            type="date"
+            value={endsAt}
+            onInput={(e: InputEvent) => setEndsAt((e.target as HTMLInputElement).value)}
+            helpText="Optional — leave blank for no expiration"
           />
         </s-form-layout>
       </s-section>
