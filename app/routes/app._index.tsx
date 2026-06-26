@@ -39,6 +39,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const codeMode = String(formData.get("codeMode") || "generate");
     const endsAtRaw = String(formData.get("endsAt") || "");
     const endsAt = endsAtRaw ? new Date(endsAtRaw).toISOString() : null;
+    const usageLimitOne = formData.get("usageLimitOne") === "1";
+    const oncePerCustomer = formData.get("oncePerCustomer") === "1";
     const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
     const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
 
@@ -137,7 +139,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             functionHandle: "discount-rejection-function-js",
             startsAt: new Date().toISOString(),
             ...(endsAt ? { endsAt } : {}),
-            appliesOncePerCustomer: false,
+            appliesOncePerCustomer: oncePerCustomer,
+            ...(usageLimitOne ? { usageLimit: 1 } : {}),
             code: firstCode,
             discountClasses: ["PRODUCT"],
           },
@@ -231,6 +234,8 @@ export default function Index() {
   const [percentage, setPercentage] = useState("20");
   const [codeMode, setCodeMode] = useState<"generate" | "import">("generate");
   const [endsAt, setEndsAt] = useState("");
+  const [usageLimitOne, setUsageLimitOne] = useState(true);
+  const [oncePerCustomer, setOncePerCustomer] = useState(true);
   const [prefix, setPrefix] = useState("");
   const [codeCount, setCodeCount] = useState("100");
   const [codeLength, setCodeLength] = useState("6");
@@ -276,6 +281,8 @@ export default function Index() {
     formData.set("percentage", percentage);
     formData.set("codeMode", codeMode);
     formData.set("endsAt", endsAt);
+    formData.set("usageLimitOne", usageLimitOne ? "1" : "0");
+    formData.set("oncePerCustomer", oncePerCustomer ? "1" : "0");
     if (codeMode === "import" && csvFile) {
       formData.set("csvFile", csvFile);
     } else {
@@ -298,6 +305,8 @@ export default function Index() {
     setPercentage("20");
     setCodeMode("generate");
     setEndsAt("");
+    setUsageLimitOne(true);
+    setOncePerCustomer(true);
     setPrefix("");
     setCodeCount("100");
     setCodeLength("6");
@@ -361,6 +370,24 @@ export default function Index() {
               style={{ marginTop: "4px", padding: "6px 8px", fontSize: "14px", borderRadius: "6px", border: "1px solid #ccc", width: "200px" }}
             />
             <s-text style={{ fontSize: "12px", color: "#6d7175", marginTop: "4px" }}>Optional — leave blank for no expiration</s-text>
+          </s-stack>
+          <s-stack direction="block" gap="tight">
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={usageLimitOne}
+                onChange={(e) => setUsageLimitOne(e.target.checked)}
+              />
+              Limit number of times each code can be used in total (1)
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={oncePerCustomer}
+                onChange={(e) => setOncePerCustomer(e.target.checked)}
+              />
+              Limit to one use per customer
+            </label>
           </s-stack>
         </s-form-layout>
       </s-section>
