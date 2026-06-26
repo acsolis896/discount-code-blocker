@@ -72,8 +72,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "No products found in the selected collections." };
   }
 
-  // Generate codes upfront so the first one can be included in creation
-  const firstCode = `${prefix}${String(1).padStart(5, "0")}`;
+  const randomSuffix = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let s = "";
+    for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  };
+
+  // Generate unique random codes
+  const codeSet = new Set<string>();
+  while (codeSet.size < codeCount) codeSet.add(`${prefix}-${randomSuffix()}`);
+  const generatedCodes = Array.from(codeSet);
+  const firstCode = generatedCodes[0];
 
   // Step 1: create the function-based discount — first code must be included in creation
   const createRes = await admin.graphql(
@@ -138,12 +148,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: `Saving configuration: ${metafieldErrors.map((e: { message: string }) => e.message).join(", ")}` };
   }
 
-  // Step 4: generate all codes upfront
-  const codes = Array.from({ length: codeCount }, (_, i) => ({
-    code: `${prefix}${String(i + 1).padStart(5, "0")}`,
-  }));
-
   // Step 3: bulk-add remaining codes (first was included in creation)
+  const codes = generatedCodes.map((code) => ({ code }));
   const remainingCodes = codes.slice(1);
   if (remainingCodes.length > 0) {
     const bulkRes = await admin.graphql(
@@ -174,7 +180,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     prefix,
     codeCount,
     firstCode: codes[0].code,
-    lastCode: codes[codes.length - 1].code,
   };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -250,7 +255,7 @@ export default function Index() {
     .toUpperCase()
     .replace(/[^A-Z0-9\-_]/g, "")
     .replace(/^[\-_]+|[\-_]+$/g, "");
-  const previewCode = sanitizedPrefix ? `${sanitizedPrefix}00001` : "";
+  const previewCode = sanitizedPrefix ? `${sanitizedPrefix}-A3X9K2` : "";
 
   return (
     <s-page heading="Create Bulk Discount Codes">
@@ -261,8 +266,7 @@ export default function Index() {
           onDismiss={handleReset}
         >
           <s-paragraph>
-            {result.codeCount} codes queued •{" "}
-            {result.firstCode as string} → {result.lastCode as string} •{" "}
+            {result.codeCount} codes queued • e.g. {result.firstCode as string} •{" "}
             {result.percentage}% off eligible products
           </s-paragraph>
           <s-paragraph>

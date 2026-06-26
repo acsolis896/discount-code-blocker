@@ -17,5 +17,5 @@ description = "t:description"
   details = "/app/discounts/:id"
 
   [extensions.build]
-  command = "npm run build"
+  command = ""
   path = "dist/function.wasm"

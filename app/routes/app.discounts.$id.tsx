@@ -1,12 +1,11 @@
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, useNavigate } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   try {
-    const { admin } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
     const numericId = params.id;
     const gid = `gid://shopify/DiscountCodeNode/${numericId}`;
 
@@ -26,21 +25,22 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     const data = await res.json();
     const title = data.data?.discountNode?.discount?.title ?? "Discount";
+    const shop = session.shop;
 
-    return { numericId, title, error: null as string | null };
+    return { numericId, title, shop, error: null as string | null };
   } catch (err: unknown) {
     return {
       numericId: params.id,
       title: "Discount",
+      shop: "",
       error: err instanceof Error ? err.message : String(err),
     };
   }
 };
 
 export default function DiscountDetails() {
-  const { title, numericId, error } = useLoaderData<typeof loader>();
+  const { title, numericId, shop, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
-  const shopify = useAppBridge();
 
   return (
     <s-page heading={title ?? "Discount"}>
@@ -60,9 +60,9 @@ export default function DiscountDetails() {
           </s-paragraph>
           <s-button
             onClick={() =>
-              shopify.navigate(
-                `shopify://admin/discounts/${numericId}`,
-                { target: "new" }
+              window.open(
+                `https://${shop}/admin/discounts/${numericId}`,
+                "_blank"
               )
             }
           >
