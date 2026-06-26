@@ -27,7 +27,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
               ... on DiscountCodeApp {
                 title
                 codes(first: 250, after: $after) {
-                  nodes { code usageCount }
+                  nodes { code asyncUsageCount }
                   pageInfo { hasNextPage endCursor }
                 }
               }
@@ -42,7 +42,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       if (discount?.title) title = discount.title;
       const codesPage = discount?.codes;
       for (const node of codesPage?.nodes ?? []) {
-        allCodes.push({ code: node.code, usageCount: node.usageCount ?? 0 });
+        allCodes.push({ code: node.code, usageCount: node.asyncUsageCount ?? 0 });
       }
       totalCount = allCodes.length;
       cursor = codesPage?.pageInfo?.hasNextPage ? codesPage.pageInfo.endCursor : null;
