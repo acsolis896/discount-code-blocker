@@ -8,11 +8,6 @@
  * @returns {CartLinesDiscountsGenerateRunResult}
  */
 export function cartLinesDiscountsGenerateRun(input) {
-  const hasGWP = input.cart.lines.some(
-    (line) => line.merchandise?.product?.productType === "GWP"
-  );
-  if (hasGWP) return { operations: [] };
-
   const metafieldValue = input.discount?.metafield?.value;
   if (!metafieldValue) return { operations: [] };
 
@@ -24,6 +19,11 @@ export function cartLinesDiscountsGenerateRun(input) {
   }
 
   const { productIds, percentage } = config;
+
+  const hasGWP = input.cart.lines.some(
+    (line) => line.merchandise?.product?.productType === "GWP"
+  );
+  if (hasGWP) return { operations: [] };
   if (!Array.isArray(productIds) || productIds.length === 0 || !percentage) {
     return { operations: [] };
   }
