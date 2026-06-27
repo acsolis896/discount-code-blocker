@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "99f724b82cb0d670c010a0ac57035052"
-name = "discount-code-blocker"
+name = "Bajio Discounts"
 application_url = "https://discount-rejection-function-js-production.up.railway.app"
 embedded = true
 
