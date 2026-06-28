@@ -1,5 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Outlet, useLoaderData, useRouteError, useNavigate, useLocation } from "react-router";
+import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
@@ -14,27 +14,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const navItems = [
-    { label: "Create discount set", path: "/app" },
-    { label: "Discount sets", path: "/app/additional" },
-    { label: "Rules", path: "/app/settings" },
-  ];
 
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        {navItems.map(({ label, path }) => (
-          <s-link
-            key={path}
-            selected={location.pathname === path}
-            onClick={(e: Event) => { e.preventDefault(); navigate(path); }}
-          >
-            {label}
-          </s-link>
-        ))}
+        <s-link href="/app">Create discount set</s-link>
+        <s-link href="/app/additional">Discount sets</s-link>
+        <s-link href="/app/settings">Rules</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
