@@ -195,9 +195,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { error: `Saving configuration: ${metafieldErrors.map((e: { message: string }) => e.message).join(", ")}` };
     }
 
-    // Step 3: bulk-add remaining codes
+    // Step 3: bulk-add remaining codes in batches of 250
     const remainingCodes = finalCodes.slice(1).map((code) => ({ code }));
-    if (remainingCodes.length > 0) {
+    for (let i = 0; i < remainingCodes.length; i += 250) {
+      const batch = remainingCodes.slice(i, i + 250);
       const bulkRes = await admin.graphql(
         `#graphql
         mutation AddBulkCodes($discountId: ID!, $codes: [DiscountRedeemCodeInput!]!) {
@@ -206,7 +207,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             userErrors { field message }
           }
         }`,
-        { variables: { discountId, codes: remainingCodes } }
+        { variables: { discountId, codes: batch } }
       );
 
       const bulkData = await bulkRes.json();
