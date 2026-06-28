@@ -164,6 +164,11 @@ export default function DiscountDetails() {
           {codes.length === 0 && (
             <s-paragraph>No codes found. Bulk codes may still be processing — refresh in a few seconds.</s-paragraph>
           )}
+          {codes.length > 0 && (
+            <s-paragraph style={{ color: "#6d7175", fontSize: "13px" }}>
+              Not seeing all codes? Shopify processes bulk uploads in the background — refresh in 30–60 seconds if the count looks low.
+            </s-paragraph>
+          )}
         </s-stack>
       </s-section>
 
