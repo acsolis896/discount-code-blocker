@@ -169,6 +169,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       break;
     }
     if (!discountId) return { error: "Failed to create discount — all codes may already be in use in other discount sets." };
+    const firstCode = finalCodes[firstCodeIndex];
 
     // Step 2: save function configuration metafield
     const metafieldRes = await admin.graphql(
