@@ -8,25 +8,31 @@ import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import db from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
   return null;
 };
 
-function parseCSVCodes(text: string): string[] {
+type ParsedCode = { code: string; used: boolean };
+
+function parseCSVCodes(text: string): ParsedCode[] {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
   const headers = lines[0].split(",").map((h) => h.trim().replace(/^["']|["']$/g, "").toLowerCase());
   const codeIdx = headers.indexOf("code");
   if (codeIdx === -1) return [];
+  const statusIdx = headers.indexOf("status");
   return lines
     .slice(1)
     .map((line) => {
       const cols = line.split(",");
-      return cols[codeIdx]?.trim().replace(/^["']|["']$/g, "").toUpperCase() ?? "";
+      const code = cols[codeIdx]?.trim().replace(/^["']|["']$/g, "").toUpperCase() ?? "";
+      const status = statusIdx >= 0 ? cols[statusIdx]?.trim().replace(/^["']|["']$/g, "").toLowerCase() : "";
+      return code ? { code, used: status === "used" } : null;
     })
-    .filter(Boolean);
+    .filter((c): c is ParsedCode => c !== null);
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -54,6 +60,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Build the codes list
     let finalCodes: string[];
 
+    let preUsedCodes: string[] = [];
+
     if (codeMode === "import") {
       const csvFile = formData.get("csvFile");
       if (!csvFile || typeof csvFile === "string") {
@@ -67,7 +75,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       if (parsed.length > 5000) {
         return { error: "Maximum 5,000 codes per import." };
       }
-      finalCodes = parsed;
+      preUsedCodes = parsed.filter((c) => c.used).map((c) => c.code);
+      finalCodes = parsed.map((c) => c.code);
     } else {
       const prefix = String(formData.get("prefix") || "")
         .toUpperCase()
@@ -210,11 +219,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
     }
 
+    // Save historically used codes to DB so they show on the details page
+    if (preUsedCodes.length > 0) {
+      const { session } = await authenticate.admin(request);
+      await db.preUsedCode.createMany({
+        data: preUsedCodes.map((code) => ({
+          shop: session.shop,
+          discountId,
+          code,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
     return {
       discountId,
       title,
       percentage,
       codeCount: finalCodes.length,
+      preUsedCount: preUsedCodes.length,
       firstCode,
     };
   } catch (err: unknown) {
@@ -271,7 +294,7 @@ export default function Index() {
     if (!file) { setCsvPreview(null); return; }
     const text = await file.text();
     const codes = parseCSVCodes(text);
-    setCsvPreview(codes.length > 0 ? { count: codes.length, sample: codes[0] } : null);
+    setCsvPreview(codes.length > 0 ? { count: codes.length, sample: codes[0]?.code ?? "" } : null);
     if (codes.length === 0) setCsvFile(null);
   }, []);
 
@@ -331,9 +354,14 @@ export default function Index() {
       {hasSuccess && (
         <s-banner title={`Discount created: ${result.title}`} tone="success" onDismiss={handleReset}>
           <s-paragraph>
-            {result.codeCount} codes queued • e.g. {result.firstCode as string} •{" "}
+            {result.codeCount} active codes queued • e.g. {result.firstCode as string} •{" "}
             {result.percentage}% off eligible products
           </s-paragraph>
+          {(result.preUsedCount as number) > 0 && (
+            <s-paragraph>
+              {result.preUsedCount as number} previously used codes recorded for history.
+            </s-paragraph>
+          )}
           <s-paragraph>Discount ID: {result.discountId as string}</s-paragraph>
         </s-banner>
       )}
@@ -452,7 +480,7 @@ export default function Index() {
               />
               {csvPreview && (
                 <s-banner tone="success" title={`${csvPreview.count} codes detected`}>
-                  <s-paragraph>First code: {csvPreview.sample}</s-paragraph>
+                  <s-paragraph>First code: {csvPreview.sample}. Codes marked "Used" will be uploaded to Shopify and flagged as previously used in the app.</s-paragraph>
                 </s-banner>
               )}
               {csvFile && !csvPreview && (

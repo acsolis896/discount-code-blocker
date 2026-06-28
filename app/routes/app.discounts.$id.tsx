@@ -3,6 +3,7 @@ import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import db from "../db.server";
 
 type RedeemCode = { code: string; usageCount: number };
 
@@ -54,7 +55,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     const usedCount = allCodes.filter((c) => c.usageCount > 0).length;
 
-    return { numericId, title, shop, codes: allCodes, totalCount, usedCount, error: null as string | null };
+    // Fetch historically used codes from DB
+    const preUsedRows = await db.preUsedCode.findMany({
+      where: { shop: session.shop, discountId: gid },
+      select: { code: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const preUsedCodes = preUsedRows.map((r) => r.code);
+
+    return { numericId, title, shop, codes: allCodes, totalCount, usedCount, preUsedCodes, error: null as string | null };
   } catch (err: unknown) {
     return {
       numericId: params.id,
@@ -63,26 +72,32 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       codes: [] as RedeemCode[],
       totalCount: 0,
       usedCount: 0,
+      preUsedCodes: [] as string[],
       error: err instanceof Error ? err.message : String(err),
     };
   }
 };
 
 export default function DiscountDetails() {
-  const { title, numericId, shop, codes, totalCount, usedCount, error } = useLoaderData<typeof loader>();
+  const { title, numericId, shop, codes, totalCount, usedCount, preUsedCodes, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const unusedCount = totalCount - usedCount;
 
-  const handleExport = useCallback(() => {
-    const rows = ["Code,Status", ...codes.map((c: RedeemCode) => `${c.code},${c.usageCount > 0 ? "Used" : "Unused"}`)];
+  const handleExport = useCallback((unusedOnly = false) => {
+    const filtered = unusedOnly ? codes.filter((c: RedeemCode) => c.usageCount === 0) : codes;
+    const rows = [
+      "Code,Status",
+      ...filtered.map((c: RedeemCode) => `${c.code},${c.usageCount > 0 ? "Used" : "Unused"}`),
+      ...(unusedOnly ? [] : preUsedCodes.map((c: string) => `${c},Previously Used`)),
+    ];
     const blob = new Blob([rows.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${title ?? "discount-codes"}.csv`;
+    a.download = `${title ?? "discount-codes"}${unusedOnly ? "-unused" : "-all"}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [codes, title]);
+  }, [codes, preUsedCodes, title]);
 
   return (
     <s-page heading={title ?? "Discount"}>
@@ -112,6 +127,14 @@ export default function DiscountDetails() {
               <s-text>Remaining</s-text>
             </s-stack>
           </s-box>
+          {preUsedCodes.length > 0 && (
+            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+              <s-stack direction="block" gap="none">
+                <s-text emphasis="bold">{preUsedCodes.length}</s-text>
+                <s-text>Previously used</s-text>
+              </s-stack>
+            </s-box>
+          )}
         </s-stack>
       </s-section>
 
@@ -144,9 +167,36 @@ export default function DiscountDetails() {
         </s-stack>
       </s-section>
 
+      {preUsedCodes.length > 0 && (
+        <s-section heading="Previously used codes (historical)">
+          <s-stack direction="block" gap="tight">
+            <s-paragraph>
+              These codes were imported as already used and are not active in Shopify.
+            </s-paragraph>
+            <s-box padding="tight" background="subdued" borderRadius="base">
+              <s-stack direction="inline" gap="none">
+                <s-text emphasis="bold" style={{ flex: 1 }}>Code</s-text>
+                <s-text emphasis="bold">Status</s-text>
+              </s-stack>
+            </s-box>
+            {preUsedCodes.map((c: string) => (
+              <s-box key={c} padding="tight" borderWidth="base" borderRadius="base">
+                <s-stack direction="inline" gap="none">
+                  <s-text style={{ flex: 1, fontFamily: "monospace" }}>{c}</s-text>
+                  <s-badge tone="critical">Previously Used</s-badge>
+                </s-stack>
+              </s-box>
+            ))}
+          </s-stack>
+        </s-section>
+      )}
+
       <s-stack direction="inline" gap="base">
-        <s-button variant="primary" onClick={handleExport} disabled={codes.length === 0}>
-          Export CSV
+        <s-button variant="primary" onClick={() => handleExport(false)} disabled={codes.length === 0 && preUsedCodes.length === 0}>
+          Export all (CSV)
+        </s-button>
+        <s-button onClick={() => handleExport(true)} disabled={unusedCount === 0}>
+          Export unused only
         </s-button>
         <s-button
           onClick={() =>
