@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState, useMemo } from "react";
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
@@ -83,6 +83,19 @@ export default function DiscountDetails() {
   const navigate = useNavigate();
   const unusedCount = totalCount - usedCount - preUsedCodes.length;
 
+  const PAGE_SIZE = 50;
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+
+  const filteredCodes = useMemo(() => {
+    const q = search.trim().toUpperCase();
+    return q ? codes.filter((c: RedeemCode) => c.code.includes(q)) : codes;
+  }, [codes, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCodes.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pagedCodes = filteredCodes.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
   const handleExport = useCallback((unusedOnly = false) => {
     const filtered = unusedOnly ? codes.filter((c: RedeemCode) => c.usageCount === 0) : codes;
     const rows = [
@@ -106,6 +119,23 @@ export default function DiscountDetails() {
           <s-paragraph>{error}</s-paragraph>
         </s-banner>
       )}
+
+      <s-stack direction="inline" gap="base">
+        <s-button variant="primary" onClick={() => handleExport(false)} disabled={codes.length === 0 && preUsedCodes.length === 0}>
+          Export all (CSV)
+        </s-button>
+        <s-button onClick={() => handleExport(true)} disabled={unusedCount === 0}>
+          Export unused only
+        </s-button>
+        <s-button
+          onClick={() =>
+            window.open(`https://${shop}/admin/discounts/${numericId}`, "_blank")
+          }
+        >
+          View in Shopify admin
+        </s-button>
+        <s-button onClick={() => navigate("/app")}>Create another discount</s-button>
+      </s-stack>
 
       <s-section heading="Summary">
         <s-stack direction="inline" gap="base">
@@ -139,7 +169,16 @@ export default function DiscountDetails() {
       </s-section>
 
       <s-section heading={`Codes${totalCount >= 2000 ? " (first 2,000)" : ""}`}>
-        <s-stack direction="block" gap="tight">
+        <s-stack direction="block" gap="base">
+          {/* Search */}
+          <input
+            type="search"
+            placeholder="Search codes…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            style={{ padding: "8px 12px", fontSize: "14px", borderRadius: "6px", border: "1px solid #ccc", width: "100%", boxSizing: "border-box" }}
+          />
+
           {/* Header row */}
           <s-box padding="tight" background="subdued" borderRadius="base">
             <s-stack direction="inline" gap="none">
@@ -148,7 +187,7 @@ export default function DiscountDetails() {
             </s-stack>
           </s-box>
 
-          {codes.map((c: RedeemCode) => (
+          {pagedCodes.map((c: RedeemCode) => (
             <s-box key={c.code} padding="tight" borderWidth="base" borderRadius="base">
               <s-stack direction="inline" gap="none">
                 <s-text style={{ flex: 1, fontFamily: "monospace" }}>{c.code}</s-text>
@@ -164,7 +203,32 @@ export default function DiscountDetails() {
           {codes.length === 0 && (
             <s-paragraph>No codes found. Bulk codes may still be processing — refresh in a few seconds.</s-paragraph>
           )}
-          {codes.length > 0 && (
+          {filteredCodes.length === 0 && codes.length > 0 && (
+            <s-paragraph>No codes match your search.</s-paragraph>
+          )}
+
+          {/* Pagination */}
+          {filteredCodes.length > 0 && (
+            <s-stack direction="inline" gap="base" style={{ alignItems: "center", justifyContent: "space-between" }}>
+              <s-button
+                disabled={safePage === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                ← Previous
+              </s-button>
+              <s-text style={{ fontSize: "13px", color: "#6d7175" }}>
+                {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filteredCodes.length)} of {filteredCodes.length}
+              </s-text>
+              <s-button
+                disabled={safePage >= totalPages - 1}
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              >
+                Next →
+              </s-button>
+            </s-stack>
+          )}
+
+          {codes.length > 0 && !search && (
             <s-paragraph style={{ color: "#6d7175", fontSize: "13px" }}>
               Not seeing all codes? Shopify processes bulk uploads in the background — refresh in 30–60 seconds if the count looks low.
             </s-paragraph>
@@ -195,23 +259,6 @@ export default function DiscountDetails() {
           </s-stack>
         </s-section>
       )}
-
-      <s-stack direction="inline" gap="base">
-        <s-button variant="primary" onClick={() => handleExport(false)} disabled={codes.length === 0 && preUsedCodes.length === 0}>
-          Export all (CSV)
-        </s-button>
-        <s-button onClick={() => handleExport(true)} disabled={unusedCount === 0}>
-          Export unused only
-        </s-button>
-        <s-button
-          onClick={() =>
-            window.open(`https://${shop}/admin/discounts/${numericId}`, "_blank")
-          }
-        >
-          View in Shopify admin
-        </s-button>
-        <s-button onClick={() => navigate("/app")}>Create another discount</s-button>
-      </s-stack>
     </s-page>
   );
 }
