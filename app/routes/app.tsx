@@ -1,5 +1,6 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useRouteError, useNavigate } from "react-router";
+import { useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
@@ -14,6 +15,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
+
+  // Shopify's s-link updates the host-frame URL via history.pushState without
+  // triggering a React Router navigation. Intercept pushState to sync them.
+  useEffect(() => {
+    const orig = window.history.pushState.bind(window.history);
+    window.history.pushState = function (state, title, url) {
+      orig(state, title, url);
+      if (url && typeof url === "string") {
+        const path = url.startsWith("http") ? new URL(url).pathname : url;
+        navigate(path, { replace: true });
+      }
+    };
+    return () => {
+      window.history.pushState = orig;
+    };
+  }, [navigate]);
 
   return (
     <AppProvider embedded apiKey={apiKey}>
