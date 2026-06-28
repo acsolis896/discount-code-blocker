@@ -37,7 +37,7 @@ function parseCSVCodes(text: string): ParsedCode[] {
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
-    const { admin } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
     const formData = await request.formData();
 
     const title = String(formData.get("title") || "Bulk Discount");
@@ -233,7 +233,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Save historically used codes to DB so they show on the details page
     if (preUsedCodes.length > 0) {
-      const { session } = await authenticate.admin(request);
       await db.preUsedCode.createMany({
         data: preUsedCodes.map((code) => ({
           shop: session.shop,
