@@ -130,41 +130,45 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { error: "No products found in the selected collections." };
     }
 
-    const firstCode = finalCodes[0];
-
-    // Step 1: create the discount with the first code
-    const createRes = await admin.graphql(
-      `#graphql
-      mutation CreateBulkCodeDiscount($input: DiscountCodeAppInput!) {
-        discountCodeAppCreate(codeAppDiscount: $input) {
-          codeAppDiscount { discountId }
-          userErrors { field message }
-        }
-      }`,
-      {
-        variables: {
-          input: {
-            title,
-            functionHandle: "discount-rejection-function-js",
-            startsAt: new Date().toISOString(),
-            ...(endsAt ? { endsAt } : {}),
-            appliesOncePerCustomer: oncePerCustomer,
-            ...(usageLimitOne ? { usageLimit: 1 } : {}),
-            code: firstCode,
-            discountClasses: ["PRODUCT"],
+    // Step 1: create the discount — try each code until one isn't a duplicate
+    let discountId: string | null = null;
+    let firstCodeIndex = 0;
+    for (let i = 0; i < finalCodes.length; i++) {
+      const createRes = await admin.graphql(
+        `#graphql
+        mutation CreateBulkCodeDiscount($input: DiscountCodeAppInput!) {
+          discountCodeAppCreate(codeAppDiscount: $input) {
+            codeAppDiscount { discountId }
+            userErrors { field message }
+          }
+        }`,
+        {
+          variables: {
+            input: {
+              title,
+              functionHandle: "discount-rejection-function-js",
+              startsAt: new Date().toISOString(),
+              ...(endsAt ? { endsAt } : {}),
+              appliesOncePerCustomer: oncePerCustomer,
+              ...(usageLimitOne ? { usageLimit: 1 } : {}),
+              code: finalCodes[i],
+              discountClasses: ["PRODUCT"],
+            },
           },
-        },
+        }
+      );
+      const createData = await createRes.json();
+      const createErrors = createData.data?.discountCodeAppCreate?.userErrors ?? [];
+      const isDuplicate = createErrors.some((e: { message: string }) => e.message.toLowerCase().includes("unique"));
+      if (isDuplicate) continue;
+      if (createErrors.length > 0) {
+        return { error: `Creating discount: ${createErrors.map((e: { message: string }) => e.message).join(", ")}` };
       }
-    );
-
-    const createData = await createRes.json();
-    const createErrors = createData.data?.discountCodeAppCreate?.userErrors ?? [];
-    if (createErrors.length > 0) {
-      return { error: `Creating discount: ${createErrors.map((e: { message: string }) => e.message).join(", ")}` };
+      discountId = createData.data?.discountCodeAppCreate?.codeAppDiscount?.discountId ?? null;
+      firstCodeIndex = i;
+      break;
     }
-
-    const discountId = createData.data?.discountCodeAppCreate?.codeAppDiscount?.discountId;
-    if (!discountId) return { error: "Failed to create discount." };
+    if (!discountId) return { error: "Failed to create discount — all codes may already be in use in other discount sets." };
 
     // Step 2: save function configuration metafield
     const metafieldRes = await admin.graphql(
@@ -195,8 +199,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { error: `Saving configuration: ${metafieldErrors.map((e: { message: string }) => e.message).join(", ")}` };
     }
 
-    // Step 3: bulk-add remaining codes in batches of 250
-    const remainingCodes = finalCodes.slice(1).map((code) => ({ code }));
+    // Step 3: bulk-add remaining codes in batches of 250 (skip the one used for creation)
+    const remainingCodes = finalCodes
+      .filter((_, i) => i !== firstCodeIndex)
+      .map((code) => ({ code }));
     for (let i = 0; i < remainingCodes.length; i += 250) {
       const batch = remainingCodes.slice(i, i + 250);
       const bulkRes = await admin.graphql(
@@ -211,7 +217,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
 
       const bulkData = await bulkRes.json();
-      const bulkErrors = bulkData.data?.discountRedeemCodeBulkAdd?.userErrors ?? [];
+      const bulkErrors = (bulkData.data?.discountRedeemCodeBulkAdd?.userErrors ?? [])
+        .filter((e: { message: string }) => !e.message.toLowerCase().includes("unique"));
       if (bulkErrors.length > 0) {
         return {
           error: `Adding codes: ${bulkErrors.map((e: { message: string }) => e.message).join(", ")}`,
