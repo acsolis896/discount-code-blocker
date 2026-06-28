@@ -76,7 +76,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         return { error: "Maximum 5,000 codes per import." };
       }
       preUsedCodes = parsed.filter((c) => c.used).map((c) => c.code);
-      finalCodes = parsed.map((c) => c.code);
+      finalCodes = parsed.filter((c) => !c.used).map((c) => c.code);
+      if (finalCodes.length === 0) {
+        return { error: "No unused codes found in the CSV — all codes are marked as Used." };
+      }
     } else {
       const prefix = String(formData.get("prefix") || "")
         .toUpperCase()
