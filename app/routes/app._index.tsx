@@ -233,13 +233,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Save historically used codes to DB so they show on the details page
     if (preUsedCodes.length > 0) {
+      // Remove any stale records for these codes (from a previously deleted set)
+      await db.preUsedCode.deleteMany({
+        where: { shop: session.shop, code: { in: preUsedCodes } },
+      });
       await db.preUsedCode.createMany({
         data: preUsedCodes.map((code) => ({
           shop: session.shop,
           discountId,
           code,
         })),
-        skipDuplicates: true,
       });
     }
 
