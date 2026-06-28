@@ -81,7 +81,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 export default function DiscountDetails() {
   const { title, numericId, shop, codes, totalCount, usedCount, preUsedCodes, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
-  const unusedCount = totalCount - usedCount;
+  const unusedCount = totalCount - usedCount - preUsedCodes.length;
 
   const handleExport = useCallback((unusedOnly = false) => {
     const filtered = unusedOnly ? codes.filter((c: RedeemCode) => c.usageCount === 0) : codes;
