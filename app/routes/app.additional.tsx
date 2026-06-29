@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
-import { useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useNavigate, Await, defer } from "react-router";
+import { Suspense } from "react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -13,9 +14,7 @@ type DiscountSet = {
   endsAt: string | null;
 };
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-
+async function fetchSets(admin: Awaited<ReturnType<typeof import("../shopify.server").authenticate.admin>>["admin"]) {
   const sets: DiscountSet[] = [];
   let cursor: string | null = null;
 
@@ -33,9 +32,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 startsAt
                 endsAt
                 asyncUsageCount
-                codes(first: 1) {
-                  pageInfo { hasNextPage }
-                }
                 codesCount { count }
               }
             }
@@ -52,9 +48,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     for (const node of nodes) {
       const d = node.discount;
       if (!d?.title) continue;
-      const numericId = node.id.split("/").pop();
       sets.push({
-        numericId,
+        numericId: node.id.split("/").pop(),
         title: d.title,
         status: d.status ?? "UNKNOWN",
         usedCodes: d.asyncUsageCount ?? 0,
@@ -68,14 +63,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
   } while (cursor);
 
-  // Sort newest first (by startsAt)
   sets.sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime());
+  return sets;
+}
 
-  const totalCodes = sets.reduce((sum, s) => sum + s.totalCodes, 0);
-  const totalUsed = sets.reduce((sum, s) => sum + s.usedCodes, 0);
-  const activeSets = sets.filter((s) => s.status === "ACTIVE").length;
-
-  return { sets, totalCodes, totalUsed, activeSets };
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { admin } = await authenticate.admin(request);
+  return defer({ sets: fetchSets(admin) });
 };
 
 function formatDate(iso: string | null) {
@@ -83,14 +77,14 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-export default function DiscountSets() {
-  const { sets, totalCodes, totalUsed, activeSets } = useLoaderData<typeof loader>();
-  const navigate = useNavigate();
-
+function SetsContent({ sets, navigate }: { sets: DiscountSet[]; navigate: (path: string) => void }) {
+  const totalCodes = sets.reduce((sum, s) => sum + s.totalCodes, 0);
+  const totalUsed = sets.reduce((sum, s) => sum + s.usedCodes, 0);
+  const activeSets = sets.filter((s) => s.status === "ACTIVE").length;
   const usageRate = totalCodes > 0 ? Math.round((totalUsed / totalCodes) * 100) : 0;
 
   return (
-    <s-page heading="Discount Sets">
+    <>
       <s-section heading="Overview">
         <s-stack direction="inline" gap="base">
           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
@@ -134,7 +128,6 @@ export default function DiscountSets() {
           </s-stack>
         ) : (
           <s-stack direction="block" gap="tight">
-            {/* Header */}
             <s-box padding="tight" background="subdued" borderRadius="base">
               <s-stack direction="inline" gap="none">
                 <s-text emphasis="bold" style={{ flex: 3 }}>Title</s-text>
@@ -144,7 +137,6 @@ export default function DiscountSets() {
                 <s-text emphasis="bold" style={{ flex: 1 }}></s-text>
               </s-stack>
             </s-box>
-
             {sets.map((s: DiscountSet) => {
               const setUsageRate = s.totalCodes > 0 ? Math.round((s.usedCodes / s.totalCodes) * 100) : 0;
               return (
@@ -160,14 +152,10 @@ export default function DiscountSets() {
                         <s-badge>{s.status.charAt(0) + s.status.slice(1).toLowerCase()}</s-badge>
                       )}
                     </s-stack>
-                    <s-text style={{ flex: 2 }}>
-                      {s.usedCodes} / {s.totalCodes} ({setUsageRate}%)
-                    </s-text>
+                    <s-text style={{ flex: 2 }}>{s.usedCodes} / {s.totalCodes} ({setUsageRate}%)</s-text>
                     <s-text style={{ flex: 2 }}>{formatDate(s.endsAt)}</s-text>
                     <s-stack style={{ flex: 1 }} direction="inline">
-                      <s-button onClick={() => navigate(`/app/discounts/${s.numericId}`)}>
-                        View
-                      </s-button>
+                      <s-button onClick={() => navigate(`/app/discounts/${s.numericId}`)}>View</s-button>
                     </s-stack>
                   </s-stack>
                 </s-box>
@@ -176,6 +164,25 @@ export default function DiscountSets() {
           </s-stack>
         )}
       </s-section>
+    </>
+  );
+}
+
+export default function DiscountSets() {
+  const { sets } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
+
+  return (
+    <s-page heading="Discount Sets">
+      <Suspense fallback={
+        <s-section heading="Overview">
+          <s-paragraph>Loading discount sets…</s-paragraph>
+        </s-section>
+      }>
+        <Await resolve={sets}>
+          {(resolvedSets) => <SetsContent sets={resolvedSets} navigate={navigate} />}
+        </Await>
+      </Suspense>
 
       <s-stack direction="inline" gap="base">
         <s-button variant="primary" onClick={() => navigate("/app")}>
