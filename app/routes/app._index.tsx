@@ -436,20 +436,23 @@ export default function Index() {
 
       <s-section heading="Codes">
         <s-stack direction="block" gap="base">
-          <s-stack direction="inline" gap="tight">
-            <s-button
-              variant={codeMode === "generate" ? "primary" : "tertiary"}
-              onClick={() => setCodeMode("generate")}
-            >
-              Generate randomly
-            </s-button>
-            <s-button
-              variant={codeMode === "import" ? "primary" : "tertiary"}
-              onClick={() => setCodeMode("import")}
-            >
-              Import from CSV
-            </s-button>
-          </s-stack>
+          <div style={{ display: "inline-flex", background: "#f1f1f1", borderRadius: "8px", padding: "3px", gap: "2px" }}>
+            {(["generate", "import"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setCodeMode(mode)}
+                style={{
+                  padding: "6px 16px", borderRadius: "6px", border: "none", cursor: "pointer",
+                  fontSize: "14px", fontWeight: 500, transition: "all 0.15s",
+                  background: codeMode === mode ? "#fff" : "transparent",
+                  color: codeMode === mode ? "#202223" : "#6d7175",
+                  boxShadow: codeMode === mode ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
+                }}
+              >
+                {mode === "generate" ? "Generate randomly" : "Import from CSV"}
+              </button>
+            ))}
+          </div>
 
           {codeMode === "generate" && (
             <s-form-layout>
@@ -512,20 +515,23 @@ export default function Index() {
           The discount applies to the highest-priced eligible item in the cart — 1 unit only.
         </s-paragraph>
         <s-stack direction="block" gap="base">
-          <s-stack direction="inline" gap="tight">
-            <s-button
-              variant={selectionType === "product" ? "primary" : "tertiary"}
-              onClick={() => handleSelectionTypeChange("product")}
-            >
-              Products
-            </s-button>
-            <s-button
-              variant={selectionType === "collection" ? "primary" : "tertiary"}
-              onClick={() => handleSelectionTypeChange("collection")}
-            >
-              Collections
-            </s-button>
-          </s-stack>
+          <div style={{ display: "inline-flex", background: "#f1f1f1", borderRadius: "8px", padding: "3px", gap: "2px" }}>
+            {(["product", "collection"] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => handleSelectionTypeChange(type)}
+                style={{
+                  padding: "6px 16px", borderRadius: "6px", border: "none", cursor: "pointer",
+                  fontSize: "14px", fontWeight: 500, transition: "all 0.15s",
+                  background: selectionType === type ? "#fff" : "transparent",
+                  color: selectionType === type ? "#202223" : "#6d7175",
+                  boxShadow: selectionType === type ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
+                }}
+              >
+                {type === "product" ? "Products" : "Collections"}
+              </button>
+            ))}
+          </div>
           <s-button onClick={handlePickItems}>
             {selectedItems.length > 0
               ? `${selectedItems.length} ${selectionType}${selectedItems.length > 1 ? "s" : ""} selected — change`
