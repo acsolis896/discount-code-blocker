@@ -120,22 +120,20 @@ export default function DiscountDetails() {
         </s-banner>
       )}
 
-      <s-stack direction="inline" gap="base">
-        <s-button variant="primary" onClick={() => handleExport(false)} disabled={codes.length === 0 && preUsedCodes.length === 0}>
-          Export all (CSV)
-        </s-button>
-        <s-button onClick={() => handleExport(true)} disabled={unusedCount === 0}>
-          Export unused only
-        </s-button>
-        <s-button
-          onClick={() =>
-            window.open(`https://${shop}/admin/discounts/${numericId}`, "_blank")
-          }
-        >
-          View in Shopify admin
-        </s-button>
-        <s-button onClick={() => navigate("/app")}>Create another discount</s-button>
-      </s-stack>
+      <s-box padding-block-end="base">
+        <s-stack direction="inline" gap="base">
+          <s-button variant="primary" onClick={() => handleExport(false)} disabled={codes.length === 0 && preUsedCodes.length === 0}>
+            Export all (CSV)
+          </s-button>
+          <s-button onClick={() => handleExport(true)} disabled={unusedCount === 0}>
+            Export unused only
+          </s-button>
+          <s-button onClick={() => window.open(`https://${shop}/admin/discounts/${numericId}`, "_blank")}>
+            View in Shopify admin
+          </s-button>
+          <s-button onClick={() => navigate("/app")}>Create another discount</s-button>
+        </s-stack>
+      </s-box>
 
       <s-section heading="Summary">
         <s-stack direction="inline" gap="base">
@@ -180,24 +178,20 @@ export default function DiscountDetails() {
           />
 
           {/* Header row */}
-          <s-box padding="tight" background="subdued" borderRadius="base">
-            <s-stack direction="inline" gap="none">
-              <s-text emphasis="bold" style={{ flex: 1 }}>Code</s-text>
-              <s-text emphasis="bold">Status</s-text>
-            </s-stack>
-          </s-box>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "var(--s-color-bg-subdued, #f6f6f7)", borderRadius: "8px" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175" }}>Code</span>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175" }}>Status</span>
+          </div>
 
           {pagedCodes.map((c: RedeemCode) => (
-            <s-box key={c.code} padding="tight" borderWidth="base" borderRadius="base">
-              <s-stack direction="inline" gap="none">
-                <s-text style={{ flex: 1, fontFamily: "monospace" }}>{c.code}</s-text>
-                {c.usageCount > 0 ? (
-                  <s-badge tone="success">Used</s-badge>
-                ) : (
-                  <s-badge>Unused</s-badge>
-                )}
-              </s-stack>
-            </s-box>
+            <div key={c.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 12px", borderBottom: "1px solid #e1e3e5" }}>
+              <span style={{ fontFamily: "monospace", fontSize: "14px", fontWeight: 500, letterSpacing: "0.02em" }}>{c.code}</span>
+              {c.usageCount > 0 ? (
+                <s-badge tone="success">Used</s-badge>
+              ) : (
+                <s-badge>Unused</s-badge>
+              )}
+            </div>
           ))}
 
           {codes.length === 0 && (
