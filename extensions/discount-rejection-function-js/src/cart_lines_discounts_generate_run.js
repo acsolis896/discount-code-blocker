@@ -19,13 +19,33 @@ export function cartLinesDiscountsGenerateRun(input) {
   }
 
   const { productIds, percentage, blockedProductTypes } = config;
-
-  // Block discount if any cart line has a blocked product type
   const blocked = Array.isArray(blockedProductTypes) ? blockedProductTypes : ["GWP"];
+
   const hasBlockedType = input.cart.lines.some(
     (line) => blocked.includes(line.merchandise?.product?.productType)
   );
-  if (hasBlockedType) return { operations: [] };
+
+  if (hasBlockedType) {
+    // Reject all rejectable entered discount codes so the code is removed
+    // from the cart and the customer sees an error message
+    const rejectableCodes = (input.enteredDiscountCodes ?? [])
+      .filter((c) => c.rejectable)
+      .map((c) => ({ code: c.code }));
+
+    if (rejectableCodes.length > 0) {
+      return {
+        operations: [
+          {
+            enteredDiscountCodesReject: {
+              codes: rejectableCodes,
+              message: "This discount code can't be used when a gift item is in your cart.",
+            },
+          },
+        ],
+      };
+    }
+    return { operations: [] };
+  }
 
   if (!Array.isArray(productIds) || productIds.length === 0 || !percentage) {
     return { operations: [] };
