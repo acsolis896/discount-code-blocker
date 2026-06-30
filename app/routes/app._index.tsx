@@ -174,6 +174,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (!discountId) return { error: "Failed to create discount — all codes may already be in use in other discount sets." };
     const firstCode = finalCodes[firstCodeIndex];
 
+    // Fetch this shop's blocked product types to bake into metafield
+    const blockedRows = await db.blockedProductType.findMany({
+      where: { shop: session.shop },
+      select: { productType: true },
+    });
+    const blockedProductTypes = blockedRows.length > 0
+      ? blockedRows.map((r: { productType: string }) => r.productType)
+      : ["GWP"]; // default fallback
+
     // Step 2: save function configuration metafield
     const metafieldRes = await admin.graphql(
       `#graphql
@@ -191,7 +200,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               namespace: "$app",
               key: "function-configuration",
               type: "json",
-              value: JSON.stringify({ productIds: resolvedProductIds, percentage }),
+              value: JSON.stringify({ productIds: resolvedProductIds, percentage, blockedProductTypes }),
             },
           ],
         },

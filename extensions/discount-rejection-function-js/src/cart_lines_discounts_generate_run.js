@@ -18,12 +18,15 @@ export function cartLinesDiscountsGenerateRun(input) {
     return { operations: [] };
   }
 
-  const { productIds, percentage } = config;
+  const { productIds, percentage, blockedProductTypes } = config;
 
-  const hasGWP = input.cart.lines.some(
-    (line) => line.merchandise?.product?.productType === "GWP"
+  // Block discount if any cart line has a blocked product type
+  const blocked = Array.isArray(blockedProductTypes) ? blockedProductTypes : ["GWP"];
+  const hasBlockedType = input.cart.lines.some(
+    (line) => blocked.includes(line.merchandise?.product?.productType)
   );
-  if (hasGWP) return { operations: [] };
+  if (hasBlockedType) return { operations: [] };
+
   if (!Array.isArray(productIds) || productIds.length === 0 || !percentage) {
     return { operations: [] };
   }
