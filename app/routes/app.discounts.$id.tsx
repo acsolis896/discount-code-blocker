@@ -120,7 +120,7 @@ export default function DiscountDetails() {
         </s-banner>
       )}
 
-      <s-box padding-block-end="base">
+      <div style={{ marginBottom: "20px" }}>
         <s-stack direction="inline" gap="base">
           <s-button variant="primary" onClick={() => handleExport(false)} disabled={codes.length === 0 && preUsedCodes.length === 0}>
             Export all (CSV)
@@ -133,7 +133,7 @@ export default function DiscountDetails() {
           </s-button>
           <s-button onClick={() => navigate("/app")}>Create another discount</s-button>
         </s-stack>
-      </s-box>
+      </div>
 
       <s-section heading="Summary">
         <s-stack direction="inline" gap="base">
