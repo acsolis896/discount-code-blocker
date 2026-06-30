@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
-import { useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useNavigate, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -81,7 +81,19 @@ function formatDate(iso: string | null) {
 export default function DiscountSets() {
   const { sets, totalCodes, totalUsed, activeSets } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const navigation = useNavigation();
+  const isLoading = navigation.state === "loading";
   const usageRate = totalCodes > 0 ? Math.round((totalUsed / totalCodes) * 100) : 0;
+
+  if (isLoading) {
+    return (
+      <s-page heading="Discount Sets">
+        <s-section heading="Overview">
+          <s-paragraph>Loading discount sets…</s-paragraph>
+        </s-section>
+      </s-page>
+    );
+  }
 
   return (
     <s-page heading="Discount Sets">
