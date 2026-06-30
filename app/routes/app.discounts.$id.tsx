@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo } from "react";
-import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
-import { useLoaderData, useNavigate } from "react-router";
+import type { LoaderFunctionArgs, ActionFunctionArgs, HeadersFunction } from "react-router";
+import { useLoaderData, useNavigate, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
@@ -78,10 +78,31 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   }
 };
 
+export const action = async ({ request, params }: ActionFunctionArgs) => {
+  const { admin } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const code = formData.get("code") as string;
+  const gid = `gid://shopify/DiscountCodeNode/${params.id}`;
+
+  await admin.graphql(
+    `#graphql
+    mutation DisableCode($discountId: ID!, $search: String) {
+      discountRedeemCodeBulkDelete(discountId: $discountId, search: $search) {
+        userErrors { field message }
+      }
+    }`,
+    { variables: { discountId: gid, search: code } }
+  );
+
+  return { ok: true };
+};
+
 export default function DiscountDetails() {
   const { title, numericId, shop, codes, totalCount, usedCount, preUsedCodes, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const fetcher = useFetcher();
   const unusedCount = totalCount - usedCount - preUsedCodes.length;
+  const [confirmCode, setConfirmCode] = useState<string | null>(null);
 
   const PAGE_SIZE = 50;
   const [search, setSearch] = useState("");
@@ -184,13 +205,49 @@ export default function DiscountDetails() {
           </div>
 
           {pagedCodes.map((c: RedeemCode) => (
-            <div key={c.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 12px", borderBottom: "1px solid #e1e3e5" }}>
-              <span style={{ fontFamily: "monospace", fontSize: "14px", fontWeight: 500, letterSpacing: "0.02em" }}>{c.code}</span>
-              {c.usageCount > 0 ? (
-                <s-badge tone="success">Used</s-badge>
-              ) : (
-                <s-badge>Unused</s-badge>
-              )}
+            <div key={c.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 12px", borderBottom: "1px solid #e1e3e5", gap: "12px" }}>
+              <span style={{ fontFamily: "monospace", fontSize: "14px", fontWeight: 500, letterSpacing: "0.02em", flex: 1 }}>{c.code}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                {c.usageCount > 0 ? (
+                  <s-badge tone="success">Used</s-badge>
+                ) : (
+                  <s-badge>Unused</s-badge>
+                )}
+                {confirmCode === c.code ? (
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                    <span style={{ fontSize: "13px", color: "#d72c0d" }}>Delete permanently?</span>
+                    <fetcher.Form method="post" style={{ display: "inline" }}>
+                      <input type="hidden" name="code" value={c.code} />
+                      <button
+                        type="submit"
+                        onClick={() => setConfirmCode(null)}
+                        style={{ padding: "4px 10px", fontSize: "12px", background: "#d72c0d", color: "#fff", border: "none", borderRadius: "5px", cursor: "pointer" }}
+                      >
+                        Yes, delete
+                      </button>
+                    </fetcher.Form>
+                    <button
+                      onClick={() => setConfirmCode(null)}
+                      style={{ padding: "4px 10px", fontSize: "12px", background: "transparent", border: "1px solid #ccc", borderRadius: "5px", cursor: "pointer" }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    disabled={c.usageCount > 0}
+                    onClick={() => setConfirmCode(c.code)}
+                    style={{
+                      padding: "4px 10px", fontSize: "12px", background: "transparent",
+                      border: "1px solid #ccc", borderRadius: "5px", cursor: c.usageCount > 0 ? "not-allowed" : "pointer",
+                      color: c.usageCount > 0 ? "#aaa" : "#d72c0d",
+                      borderColor: c.usageCount > 0 ? "#e1e3e5" : "#f5c6c2",
+                    }}
+                  >
+                    Disable
+                  </button>
+                )}
+              </div>
             </div>
           ))}
 
