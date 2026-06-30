@@ -107,6 +107,10 @@ export default function DiscountDetails() {
   const PAGE_SIZE = 50;
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [preUsedPage, setPreUsedPage] = useState(0);
+  const preUsedTotalPages = Math.max(1, Math.ceil(preUsedCodes.length / PAGE_SIZE));
+  const safePreUsedPage = Math.min(preUsedPage, preUsedTotalPages - 1);
+  const pagedPreUsedCodes = preUsedCodes.slice(safePreUsedPage * PAGE_SIZE, safePreUsedPage * PAGE_SIZE + PAGE_SIZE);
 
   const filteredCodes = useMemo(() => {
     const q = search.trim().toUpperCase();
@@ -292,24 +296,45 @@ export default function DiscountDetails() {
 
       {preUsedCodes.length > 0 && (
         <s-section heading="Previously used codes (historical)">
-          <s-stack direction="block" gap="tight">
+          <s-stack direction="block" gap="base">
             <s-paragraph>
               These codes were imported as already used and are not active in Shopify.
             </s-paragraph>
-            <s-box padding="tight" background="subdued" borderRadius="base">
-              <s-stack direction="inline" gap="none">
-                <s-text emphasis="bold" style={{ flex: 1 }}>Code</s-text>
-                <s-text emphasis="bold">Status</s-text>
-              </s-stack>
-            </s-box>
-            {preUsedCodes.map((c: string) => (
-              <s-box key={c} padding="tight" borderWidth="base" borderRadius="base">
-                <s-stack direction="inline" gap="none">
-                  <s-text style={{ flex: 1, fontFamily: "monospace" }}>{c}</s-text>
+
+            {/* Header row */}
+            <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "var(--s-color-bg-subdued, #f6f6f7)", borderRadius: "8px", gap: "12px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 1 }}>Code</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", width: "120px", textAlign: "center" }}>Status</span>
+            </div>
+
+            {pagedPreUsedCodes.map((c: string) => (
+              <div key={c} style={{ display: "flex", alignItems: "center", padding: "12px 12px", borderBottom: "1px solid #e1e3e5", gap: "12px" }}>
+                <span style={{ fontFamily: "monospace", fontSize: "14px", fontWeight: 500, letterSpacing: "0.02em", flex: 1 }}>{c}</span>
+                <div style={{ width: "120px", display: "flex", justifyContent: "center" }}>
                   <s-badge tone="critical">Previously Used</s-badge>
-                </s-stack>
-              </s-box>
+                </div>
+              </div>
             ))}
+
+            {preUsedCodes.length > PAGE_SIZE && (
+              <s-stack direction="inline" gap="base" style={{ alignItems: "center", justifyContent: "space-between" }}>
+                <s-button
+                  disabled={safePreUsedPage === 0}
+                  onClick={() => setPreUsedPage((p) => Math.max(0, p - 1))}
+                >
+                  ← Previous
+                </s-button>
+                <s-text style={{ fontSize: "13px", color: "#6d7175" }}>
+                  {safePreUsedPage * PAGE_SIZE + 1}–{Math.min((safePreUsedPage + 1) * PAGE_SIZE, preUsedCodes.length)} of {preUsedCodes.length}
+                </s-text>
+                <s-button
+                  disabled={safePreUsedPage >= preUsedTotalPages - 1}
+                  onClick={() => setPreUsedPage((p) => Math.min(preUsedTotalPages - 1, p + 1))}
+                >
+                  Next →
+                </s-button>
+              </s-stack>
+            )}
           </s-stack>
         </s-section>
       )}
