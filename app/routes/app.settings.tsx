@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
@@ -49,76 +49,80 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
     const blockedProductTypes = rows.length > 0 ? rows.map((r: { productType: string }) => r.productType) : ["GWP"];
 
-    // Paginate through all discounts using this function
+    // Fetch all discount nodes first, then batch-update metafields
     let cursor: string | null = null;
     let updated = 0;
-    let errors: string[] = [];
+    const errors: string[] = [];
+    const allNodes: Array<{ id: string; title: string; metafieldValue: string | null }> = [];
 
-    do {
-      const res = await admin.graphql(
-        `#graphql
-        query GetAllDiscounts($after: String) {
-          discountNodes(first: 50, after: $after, query: "function_id:discount-rejection-function-js") {
-            nodes {
-              id
-              discount {
-                ... on DiscountCodeApp {
-                  title
+    try {
+      do {
+        const res = await admin.graphql(
+          `#graphql
+          query GetAllDiscounts($after: String) {
+            discountNodes(first: 50, after: $after, query: "function_id:discount-rejection-function-js") {
+              nodes {
+                id
+                discount {
+                  ... on DiscountCodeApp { title }
+                }
+                metafield(namespace: "$app", key: "function-configuration") {
+                  value
                 }
               }
-              metafield(namespace: "$app", key: "function-configuration") {
-                value
-              }
+              pageInfo { hasNextPage endCursor }
             }
-            pageInfo { hasNextPage endCursor }
-          }
-        }`,
-        { variables: { after: cursor } }
-      );
+          }`,
+          { variables: { after: cursor } }
+        );
+        const data = await res.json();
+        const nodes = data.data?.discountNodes?.nodes ?? [];
+        for (const node of nodes) {
+          allNodes.push({
+            id: node.id,
+            title: node.discount?.title ?? node.id,
+            metafieldValue: node.metafield?.value ?? null,
+          });
+        }
+        const pageInfo = data.data?.discountNodes?.pageInfo;
+        cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
+      } while (cursor);
 
-      const data = await res.json();
-      const nodes = data.data?.discountNodes?.nodes ?? [];
-
-      for (const node of nodes) {
+      // Batch all metafield updates in one mutation (up to 25 at a time)
+      const metafields = allNodes.map((node) => {
         let config: Record<string, unknown> = {};
-        try {
-          if (node.metafield?.value) config = JSON.parse(node.metafield.value);
-        } catch { /* keep empty config */ }
+        try { if (node.metafieldValue) config = JSON.parse(node.metafieldValue); } catch { /* empty */ }
+        return {
+          ownerId: node.id,
+          namespace: "$app",
+          key: "function-configuration",
+          type: "json",
+          value: JSON.stringify({ ...config, blockedProductTypes }),
+        };
+      });
 
-        const newConfig = { ...config, blockedProductTypes };
-
+      for (let i = 0; i < metafields.length; i += 25) {
+        const batch = metafields.slice(i, i + 25);
         const updateRes = await admin.graphql(
           `#graphql
-          mutation SyncMetafield($metafields: [MetafieldsSetInput!]!) {
+          mutation SyncMetafields($metafields: [MetafieldsSetInput!]!) {
             metafieldsSet(metafields: $metafields) {
               userErrors { field message }
             }
           }`,
-          {
-            variables: {
-              metafields: [{
-                ownerId: node.id,
-                namespace: "$app",
-                key: "function-configuration",
-                type: "json",
-                value: JSON.stringify(newConfig),
-              }],
-            },
-          }
+          { variables: { metafields: batch } }
         );
-
         const updateData = await updateRes.json();
         const updateErrors = updateData.data?.metafieldsSet?.userErrors ?? [];
         if (updateErrors.length > 0) {
-          errors.push(`${node.discount?.title ?? node.id}: ${updateErrors.map((e: { message: string }) => e.message).join(", ")}`);
+          errors.push(...updateErrors.map((e: { message: string }) => e.message));
         } else {
-          updated++;
+          updated += batch.length;
         }
       }
-
-      const pageInfo = data.data?.discountNodes?.pageInfo;
-      cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
-    } while (cursor);
+    } catch (err: unknown) {
+      return { error: `Sync failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
 
     if (errors.length > 0) return { error: `Synced ${updated} discounts, but ${errors.length} failed: ${errors.join("; ")}` };
     return { synced: updated };
@@ -132,7 +136,22 @@ export default function SettingsPage() {
   const fetcher = useFetcher<typeof action>();
   const [newType, setNewType] = useState("");
 
-  const isSubmitting = fetcher.state !== "idle";
+  const isFetcherBusy = fetcher.state !== "idle";
+  const [forcedIdle, setForcedIdle] = useState(false);
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isFetcherBusy && fetcher.formData?.get("intent") === "sync") {
+      setForcedIdle(false);
+      syncTimeoutRef.current = setTimeout(() => setForcedIdle(true), 60000);
+    } else {
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      setForcedIdle(false);
+    }
+    return () => { if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current); };
+  }, [isFetcherBusy, fetcher.formData]);
+
+  const isSubmitting = isFetcherBusy && !forcedIdle;
   const result = fetcher.data;
 
   const handleAdd = () => {
