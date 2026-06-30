@@ -7,12 +7,16 @@ import db from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const rows = await db.blockedProductType.findMany({
-    where: { shop: session.shop },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, productType: true },
-  });
-  return { blockedTypes: rows };
+  try {
+    const rows = await db.blockedProductType.findMany({
+      where: { shop: session.shop },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, productType: true },
+    });
+    return { blockedTypes: rows, dbError: null };
+  } catch (err: unknown) {
+    return { blockedTypes: [], dbError: err instanceof Error ? err.message : String(err) };
+  }
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -124,7 +128,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { blockedTypes } = useLoaderData<typeof loader>();
+  const { blockedTypes, dbError } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const [newType, setNewType] = useState("");
 
@@ -162,14 +166,19 @@ export default function SettingsPage() {
             Product types are set on products in the Shopify admin under the product details.
           </s-paragraph>
 
+          {dbError && (
+            <s-banner tone="critical">
+              <s-paragraph>Database error: {dbError}</s-paragraph>
+            </s-banner>
+          )}
           {(result as { error?: string })?.error && (
-            <s-banner title="Error" tone="critical">
+            <s-banner tone="critical">
               <s-paragraph>{(result as { error: string }).error}</s-paragraph>
             </s-banner>
           )}
           {(result as { synced?: number })?.synced !== undefined && (
-            <s-banner title="Synced" tone="success">
-              <s-paragraph>Updated {(result as { synced: number }).synced} discount set{(result as { synced: number }).synced !== 1 ? "s" : ""} with the current blocked types.</s-paragraph>
+            <s-banner tone="success">
+              <s-paragraph>Synced: updated {(result as { synced: number }).synced} discount set{(result as { synced: number }).synced !== 1 ? "s" : ""} with the current blocked types.</s-paragraph>
             </s-banner>
           )}
 
