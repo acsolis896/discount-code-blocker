@@ -201,7 +201,7 @@ export default function DiscountDetails() {
           {/* Header row */}
           <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "var(--s-color-bg-subdued, #f6f6f7)", borderRadius: "8px", gap: "12px" }}>
             <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 1 }}>Code</span>
-            <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", width: "60px", textAlign: "center" }}>Status</span>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", width: "90px", textAlign: "center" }}>Status</span>
             <span style={{ width: "68px" }}></span>
           </div>
 
@@ -209,7 +209,7 @@ export default function DiscountDetails() {
             <div key={c.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 12px", borderBottom: "1px solid #e1e3e5", gap: "12px" }}>
               <span style={{ fontFamily: "monospace", fontSize: "14px", fontWeight: 500, letterSpacing: "0.02em", flex: 1 }}>{c.code}</span>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{ width: "60px", display: "flex", justifyContent: "center" }}>
+                <div style={{ width: "90px", display: "flex", justifyContent: "center" }}>
                   {c.usageCount > 0 ? (
                     <s-badge tone="success">Used</s-badge>
                   ) : (
