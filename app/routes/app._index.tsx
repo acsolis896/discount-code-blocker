@@ -445,6 +445,7 @@ export default function Index() {
 
       <s-section heading="Codes">
         <s-stack direction="block" gap="base">
+          <div style={{ width: "fit-content" }}>
           <div style={{ display: "inline-flex", background: "#f1f1f1", borderRadius: "8px", padding: "3px", gap: "2px" }}>
             {(["generate", "import"] as const).map((mode) => (
               <button
@@ -461,6 +462,7 @@ export default function Index() {
                 {mode === "generate" ? "Generate randomly" : "Import from CSV"}
               </button>
             ))}
+          </div>
           </div>
 
           {codeMode === "generate" && (
@@ -524,6 +526,7 @@ export default function Index() {
           The discount applies to the highest-priced eligible item in the cart — 1 unit only.
         </s-paragraph>
         <s-stack direction="block" gap="base">
+          <div style={{ width: "fit-content" }}>
           <div style={{ display: "inline-flex", background: "#f1f1f1", borderRadius: "8px", padding: "3px", gap: "2px" }}>
             {(["product", "collection"] as const).map((type) => (
               <button
@@ -540,6 +543,7 @@ export default function Index() {
                 {type === "product" ? "Products" : "Collections"}
               </button>
             ))}
+          </div>
           </div>
           <s-button onClick={handlePickItems}>
             {selectedItems.length > 0
