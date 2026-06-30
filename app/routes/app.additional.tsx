@@ -127,41 +127,38 @@ export default function DiscountSets() {
             <s-button onClick={() => navigate("/app")}>Create your first discount set</s-button>
           </s-stack>
         ) : (
-          <s-stack direction="block" gap="tight">
-            <s-box padding="tight" background="subdued" borderRadius="base">
-              <s-stack direction="inline" gap="none">
-                <s-text emphasis="bold" style={{ flex: 3 }}>Title</s-text>
-                <s-text emphasis="bold" style={{ flex: 1 }}>Status</s-text>
-                <s-text emphasis="bold" style={{ flex: 2 }}>Usage</s-text>
-                <s-text emphasis="bold" style={{ flex: 2 }}>Expires</s-text>
-                <s-text emphasis="bold" style={{ flex: 1 }}></s-text>
-              </s-stack>
-            </s-box>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+            {/* Header row */}
+            <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "var(--s-color-bg-subdued, #f6f6f7)", borderRadius: "8px", gap: "12px", marginBottom: "4px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 3 }}>Title</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", width: "80px" }}>Status</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 2 }}>Usage</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 2 }}>Expires</span>
+              <span style={{ width: "60px" }}></span>
+            </div>
             {sets.map((s: DiscountSet) => {
               const setUsageRate = s.totalCodes > 0 ? Math.round((s.usedCodes / s.totalCodes) * 100) : 0;
               return (
-                <s-box key={s.numericId} padding="tight" borderWidth="base" borderRadius="base">
-                  <s-stack direction="inline" gap="none">
-                    <s-text style={{ flex: 3 }}>{s.title}</s-text>
-                    <s-stack style={{ flex: 1 }}>
-                      {s.status === "ACTIVE" ? (
-                        <s-badge tone="success">Active</s-badge>
-                      ) : s.status === "EXPIRED" ? (
-                        <s-badge tone="critical">Expired</s-badge>
-                      ) : (
-                        <s-badge>{s.status.charAt(0) + s.status.slice(1).toLowerCase()}</s-badge>
-                      )}
-                    </s-stack>
-                    <s-text style={{ flex: 2 }}>{s.usedCodes} / {s.totalCodes} ({setUsageRate}%)</s-text>
-                    <s-text style={{ flex: 2 }}>{formatDate(s.endsAt)}</s-text>
-                    <s-stack style={{ flex: 1 }} direction="inline">
-                      <s-button onClick={() => navigate(`/app/discounts/${s.numericId}`)}>View</s-button>
-                    </s-stack>
-                  </s-stack>
-                </s-box>
+                <div key={s.numericId} style={{ display: "flex", alignItems: "center", padding: "12px 12px", borderBottom: "1px solid #e1e3e5", gap: "12px" }}>
+                  <span style={{ flex: 3, fontSize: "14px" }}>{s.title}</span>
+                  <div style={{ width: "80px" }}>
+                    {s.status === "ACTIVE" ? (
+                      <s-badge tone="success">Active</s-badge>
+                    ) : s.status === "EXPIRED" ? (
+                      <s-badge tone="critical">Expired</s-badge>
+                    ) : (
+                      <s-badge>{s.status.charAt(0) + s.status.slice(1).toLowerCase()}</s-badge>
+                    )}
+                  </div>
+                  <span style={{ flex: 2, fontSize: "14px", color: "#6d7175" }}>{s.usedCodes} / {s.totalCodes} ({setUsageRate}%)</span>
+                  <span style={{ flex: 2, fontSize: "14px", color: "#6d7175" }}>{formatDate(s.endsAt)}</span>
+                  <div style={{ width: "60px" }}>
+                    <s-button onClick={() => navigate(`/app/discounts/${s.numericId}`)}>View</s-button>
+                  </div>
+                </div>
               );
             })}
-          </s-stack>
+          </div>
         )}
       </s-section>
 
