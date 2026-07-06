@@ -225,19 +225,19 @@ export default function DiscountDetails() {
   const [confirmCode, setConfirmCode] = useState<string | null>(null);
   const [editingItems, setEditingItems] = useState(false);
 
-  const handleEditItems = useCallback(async () => {
+  const handleEditItems = useCallback(async (mode: "product" | "collection") => {
     setEditingItems(true);
     try {
       const selected = await shopify.resourcePicker({
-        type: "product",
+        type: mode,
         multiple: true,
-        selectionIds: eligibleProductIds.map((id) => ({ id })),
+        selectionIds: mode === "product" ? eligibleProductIds.map((id) => ({ id })) : [],
       });
-      if (!selected) { setEditingItems(false); return; }
+      if (!selected) return;
       const form = new FormData();
       form.append("intent", "updateItems");
-      form.append("productIds", JSON.stringify(selected.map((p: { id: string }) => p.id)));
-      form.append("collectionIds", JSON.stringify([]));
+      form.append("productIds", JSON.stringify(mode === "product" ? selected.map((p: { id: string }) => p.id) : []));
+      form.append("collectionIds", JSON.stringify(mode === "collection" ? selected.map((c: { id: string }) => c.id) : []));
       form.append("percentage", String(percentage ?? 0));
       fetcher.submit(form, { method: "post" });
     } finally {
@@ -371,11 +371,14 @@ export default function DiscountDetails() {
             </div>
           )}
 
-          <div>
-            <s-button onClick={handleEditItems} disabled={editingItems}>
-              {editingItems ? "Opening picker…" : "Edit eligible products"}
+          <s-stack direction="inline" gap="base">
+            <s-button onClick={() => handleEditItems("product")} disabled={editingItems}>
+              {editingItems ? "Opening picker…" : "Edit by products"}
             </s-button>
-          </div>
+            <s-button onClick={() => handleEditItems("collection")} disabled={editingItems}>
+              Edit by collection
+            </s-button>
+          </s-stack>
         </s-stack>
       </s-section>
 
