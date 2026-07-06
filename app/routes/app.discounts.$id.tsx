@@ -77,18 +77,34 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     const metafieldData = await metafieldRes.json();
     const rawConfig = metafieldData.data?.discountNode?.metafield?.value ?? null;
     let eligibleProductIds: string[] = [];
+    let eligibleCollectionIds: string[] = [];
     let percentage: number | null = null;
     try {
       if (rawConfig) {
         const cfg = JSON.parse(rawConfig);
         eligibleProductIds = cfg.productIds ?? [];
+        eligibleCollectionIds = cfg.collectionIds ?? [];
         percentage = cfg.percentage ?? null;
       }
     } catch { /* ignore */ }
 
-    // Resolve product IDs to titles
+    // Prefer showing collections if they were used; fall back to products
     let eligibleProducts: { id: string; title: string }[] = [];
-    if (eligibleProductIds.length > 0) {
+    let eligibleCollections: { id: string; title: string }[] = [];
+
+    if (eligibleCollectionIds.length > 0) {
+      const colTitlesRes = await admin.graphql(
+        `#graphql
+        query CollectionTitles($ids: [ID!]!) {
+          nodes(ids: $ids) { ... on Collection { id title } }
+        }`,
+        { variables: { ids: eligibleCollectionIds.slice(0, 50) } }
+      );
+      const colTitlesData = await colTitlesRes.json();
+      eligibleCollections = (colTitlesData.data?.nodes ?? [])
+        .filter((n: { id?: string; title?: string } | null) => n?.id)
+        .map((n: { id: string; title: string }) => ({ id: n.id, title: n.title }));
+    } else if (eligibleProductIds.length > 0) {
       const titlesRes = await admin.graphql(
         `#graphql
         query ProductTitles($ids: [ID!]!) {
@@ -102,7 +118,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         .map((n: { id: string; title: string }) => ({ id: n.id, title: n.title }));
     }
 
-    return { numericId, title, shop, codes: allCodes, totalCount, usedCount, preUsedCodes, eligibleProducts, eligibleProductIds, percentage, error: null as string | null };
+    return { numericId, title, shop, codes: allCodes, totalCount, usedCount, preUsedCodes, eligibleProducts, eligibleProductIds, eligibleCollections, eligibleCollectionIds, percentage, error: null as string | null };
   } catch (err: unknown) {
     return {
       numericId: params.id,
@@ -114,6 +130,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       preUsedCodes: [] as string[],
       eligibleProducts: [] as { id: string; title: string }[],
       eligibleProductIds: [] as string[],
+      eligibleCollections: [] as { id: string; title: string }[],
+      eligibleCollectionIds: [] as string[],
       percentage: null as number | null,
       error: err instanceof Error ? err.message : String(err),
     };
@@ -176,7 +194,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       if (raw) existingConfig = JSON.parse(raw);
     } catch { /* empty */ }
 
-    const newConfig = { ...existingConfig, productIds: resolvedProductIds, percentage };
+    const newConfig = { ...existingConfig, productIds: resolvedProductIds, collectionIds, percentage };
 
     await admin.graphql(
       `#graphql
@@ -217,7 +235,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function DiscountDetails() {
-  const { title, numericId, shop, codes, totalCount, usedCount, preUsedCodes, eligibleProducts, eligibleProductIds, percentage, error } = useLoaderData<typeof loader>();
+  const { title, numericId, shop, codes, totalCount, usedCount, preUsedCodes, eligibleProducts, eligibleProductIds, eligibleCollections, eligibleCollectionIds, percentage, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const fetcher = useFetcher();
   const shopify = useAppBridge();
@@ -231,7 +249,9 @@ export default function DiscountDetails() {
       const selected = await shopify.resourcePicker({
         type: mode,
         multiple: true,
-        selectionIds: mode === "product" ? eligibleProductIds.map((id) => ({ id })) : [],
+        selectionIds: mode === "product"
+          ? eligibleProductIds.map((id) => ({ id }))
+          : eligibleCollectionIds.map((id) => ({ id })),
       });
       if (!selected) return;
       const form = new FormData();
@@ -350,25 +370,43 @@ export default function DiscountDetails() {
             </s-banner>
           )}
 
-          <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "var(--s-color-bg-subdued, #f6f6f7)", borderRadius: "8px" }}>
-            <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 1 }}>Product</span>
-          </div>
-
-          {eligibleProducts.length === 0 && (
-            <div style={{ padding: "12px", color: "#6d7175", fontSize: "14px" }}>
-              No eligible products configured.
-            </div>
-          )}
-          {eligibleProducts.map((p: { id: string; title: string }) => (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", padding: "12px", borderBottom: "1px solid #e1e3e5" }}>
-              <span style={{ fontSize: "14px", flex: 1 }}>{p.title}</span>
-              <span style={{ fontSize: "12px", color: "#6d7175", fontFamily: "monospace" }}>{p.id.split("/").pop()}</span>
-            </div>
-          ))}
-          {eligibleProductIds.length > 50 && (
-            <div style={{ padding: "8px 12px", fontSize: "13px", color: "#6d7175" }}>
-              Showing 50 of {eligibleProductIds.length} eligible products.
-            </div>
+          {eligibleCollections.length > 0 ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "var(--s-color-bg-subdued, #f6f6f7)", borderRadius: "8px" }}>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 1 }}>Collection</span>
+              </div>
+              {eligibleCollections.map((c: { id: string; title: string }) => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", padding: "12px", borderBottom: "1px solid #e1e3e5" }}>
+                  <span style={{ fontSize: "14px", flex: 1 }}>{c.title}</span>
+                </div>
+              ))}
+              {eligibleCollectionIds.length > 50 && (
+                <div style={{ padding: "8px 12px", fontSize: "13px", color: "#6d7175" }}>
+                  Showing 50 of {eligibleCollectionIds.length} collections.
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "var(--s-color-bg-subdued, #f6f6f7)", borderRadius: "8px" }}>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 1 }}>Product</span>
+              </div>
+              {eligibleProducts.length === 0 && (
+                <div style={{ padding: "12px", color: "#6d7175", fontSize: "14px" }}>
+                  No eligible products configured.
+                </div>
+              )}
+              {eligibleProducts.map((p: { id: string; title: string }) => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", padding: "12px", borderBottom: "1px solid #e1e3e5" }}>
+                  <span style={{ fontSize: "14px", flex: 1 }}>{p.title}</span>
+                </div>
+              ))}
+              {eligibleProductIds.length > 50 && (
+                <div style={{ padding: "8px 12px", fontSize: "13px", color: "#6d7175" }}>
+                  Showing 50 of {eligibleProductIds.length} eligible products.
+                </div>
+              )}
+            </>
           )}
 
           <s-stack direction="inline" gap="base">

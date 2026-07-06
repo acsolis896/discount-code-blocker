@@ -200,7 +200,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               namespace: "$app",
               key: "function-configuration",
               type: "json",
-              value: JSON.stringify({ productIds: resolvedProductIds, percentage, blockedProductTypes }),
+              value: JSON.stringify({ productIds: resolvedProductIds, collectionIds, percentage, blockedProductTypes }),
             },
           ],
         },
