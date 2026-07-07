@@ -40,6 +40,7 @@ export default function App() {
       <s-app-nav>
         <s-link href="/app">Create discount set</s-link>
         <s-link href="/app/additional">Discount sets</s-link>
+        <s-link href="/app/single-codes">Single codes</s-link>
         <s-link href="/app/settings">Rules</s-link>
       </s-app-nav>
       {isLoading ? (

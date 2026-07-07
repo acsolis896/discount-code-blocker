@@ -19,9 +19,13 @@ api_version = "2026-04"
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
 
+  [[webhooks.subscriptions]]
+  topics = [ "customers/update" ]
+  uri = "/webhooks/customers/update"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_checkouts,write_discounts,write_metaobject_definitions,write_metaobjects,write_products,read_products"
+scopes = "write_checkouts,write_discounts,write_metaobject_definitions,write_metaobjects,write_products,read_products,read_customers,write_customers"
 
 [discount.metafields.app.function-configuration]
 type = "json"

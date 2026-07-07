@@ -17,6 +17,14 @@ query CartLinesDiscountsGenerateRunInput {
         }
       }
     }
+    buyerIdentity {
+      customer {
+        id
+        tagsMf: metafield(namespace: "custom", key: "bajio_discount_tags") {
+          value
+        }
+      }
+    }
   }
   enteredDiscountCodes {
     code

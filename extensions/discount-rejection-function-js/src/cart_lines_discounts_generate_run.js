@@ -18,35 +18,63 @@ export function cartLinesDiscountsGenerateRun(input) {
     return { operations: [] };
   }
 
-  const { productIds, percentage, blockedProductTypes } = config;
-  const blocked = Array.isArray(blockedProductTypes) ? blockedProductTypes : ["GWP"];
+  const { productIds, percentage, blockedProductTypes, requiredTag, blockedTag } = config;
 
-  const hasBlockedType = input.cart.lines.some(
-    (line) => blocked.includes(line.merchandise?.product?.productType)
-  );
+  const rejectableCodes = (input.enteredDiscountCodes ?? [])
+    .filter((c) => c.rejectable)
+    .map((c) => ({ code: c.code }));
 
-  if (hasBlockedType) {
-    // Reject all rejectable entered discount codes so the code is removed
-    // from the cart and the customer sees an error message
-    const rejectableCodes = (input.enteredDiscountCodes ?? [])
-      .filter((c) => c.rejectable)
-      .map((c) => ({ code: c.code }));
-
+  const reject = (message) => {
     if (rejectableCodes.length > 0) {
       return {
-        operations: [
-          {
-            enteredDiscountCodesReject: {
-              codes: rejectableCodes,
-              message: "This discount code can't be used when a gift item is in your cart.",
-            },
-          },
-        ],
+        operations: [{ enteredDiscountCodesReject: { codes: rejectableCodes, message } }],
       };
     }
     return { operations: [] };
+  };
+
+  // 1. Block if a blocked product type (e.g. GWP) is in the cart
+  const blocked = Array.isArray(blockedProductTypes) ? blockedProductTypes : ["GWP"];
+  const hasBlockedType = input.cart.lines.some(
+    (line) => blocked.includes(line.merchandise?.product?.productType)
+  );
+  if (hasBlockedType) {
+    return reject("This discount code can't be used when a gift item is in your cart.");
   }
 
+  // 2. Tag-based checks (only for single-code discounts that have tag config)
+  if (requiredTag || blockedTag) {
+    const customer = input.cart.buyerIdentity?.customer;
+
+    // Not logged in
+    if (!customer) {
+      return reject("Please log in to your account to use this discount code.");
+    }
+
+    // Read synced tags from the customer metafield written by the app webhook
+    let customerTags = [];
+    const mfValue = customer.tagsMf?.value;
+    if (mfValue) {
+      try { customerTags = JSON.parse(mfValue); } catch { /* empty */ }
+    }
+
+    // Metafield not yet synced — treat as not eligible
+    if (!mfValue) {
+      return reject("Please log in to your account to use this discount code.");
+    }
+
+    // Missing required tag
+    if (requiredTag && !customerTags.includes(requiredTag)) {
+      return reject("This discount code is not available for your account.");
+    }
+
+    // Has blocked tag (usage limit reached)
+    if (blockedTag && customerTags.includes(blockedTag)) {
+      return reject("You've reached your usage limit for this discount code.");
+    }
+  }
+
+  // 3. Apply discount to eligible products
   if (!Array.isArray(productIds) || productIds.length === 0 || !percentage) {
     return { operations: [] };
   }

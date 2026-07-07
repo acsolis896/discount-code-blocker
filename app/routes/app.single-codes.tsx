@@ -1,0 +1,118 @@
+import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
+import { useLoaderData, useNavigate } from "react-router";
+import { authenticate } from "../shopify.server";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import db from "../db.server";
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { admin, session } = await authenticate.admin(request);
+
+  const rows = await db.singleCodeDiscount.findMany({
+    where: { shop: session.shop },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (rows.length === 0) return { codes: [] };
+
+  // Fetch usage counts from Shopify for each discount
+  const gids = rows.map((r) => r.discountId);
+  const res = await admin.graphql(
+    `#graphql
+    query GetSingleCodes($ids: [ID!]!) {
+      nodes(ids: $ids) {
+        ... on DiscountCodeNode {
+          id
+          discount {
+            ... on DiscountCodeApp {
+              title
+              status
+              asyncUsageCount
+            }
+          }
+        }
+      }
+    }`,
+    { variables: { ids: gids } }
+  );
+  const data = await res.json();
+  const nodeMap: Record<string, { title: string; status: string; usageCount: number }> = {};
+  for (const node of data.data?.nodes ?? []) {
+    if (node?.id) {
+      nodeMap[node.id] = {
+        title: node.discount?.title ?? "",
+        status: node.discount?.status ?? "UNKNOWN",
+        usageCount: node.discount?.asyncUsageCount ?? 0,
+      };
+    }
+  }
+
+  const codes = rows.map((r) => ({
+    id: r.id,
+    discountId: r.discountId,
+    numericId: r.discountId.split("/").pop(),
+    code: r.code,
+    requiredTag: r.requiredTag,
+    blockedTag: r.blockedTag,
+    title: nodeMap[r.discountId]?.title ?? r.code,
+    status: nodeMap[r.discountId]?.status ?? "UNKNOWN",
+    usageCount: nodeMap[r.discountId]?.usageCount ?? 0,
+  }));
+
+  return { codes };
+};
+
+export default function SingleCodesPage() {
+  const { codes } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
+
+  return (
+    <s-page heading="Single Codes">
+      <div style={{ marginBottom: "20px" }}>
+        <s-button variant="primary" onClick={() => navigate("/app/single-codes/new")}>
+          Create single code
+        </s-button>
+      </div>
+
+      {codes.length === 0 ? (
+        <s-section heading="">
+          <s-paragraph>No single codes created yet.</s-paragraph>
+        </s-section>
+      ) : (
+        <s-section heading="All single codes">
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", background: "var(--s-color-bg-subdued, #f6f6f7)", borderRadius: "8px", gap: "12px", marginBottom: "4px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 2 }}>Code</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", width: "80px" }}>Status</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 2 }}>Required tag</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", flex: 2 }}>Blocked tag</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6d7175", width: "80px" }}>Uses</span>
+              <span style={{ width: "60px" }}></span>
+            </div>
+            {codes.map((c) => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", padding: "12px", borderBottom: "1px solid #e1e3e5", gap: "12px" }}>
+                <span style={{ fontFamily: "monospace", fontSize: "14px", fontWeight: 500, flex: 2 }}>{c.code}</span>
+                <div style={{ width: "80px" }}>
+                  {c.status === "ACTIVE" ? (
+                    <s-badge tone="success">Active</s-badge>
+                  ) : c.status === "EXPIRED" ? (
+                    <s-badge tone="critical">Expired</s-badge>
+                  ) : (
+                    <s-badge>{c.status.charAt(0) + c.status.slice(1).toLowerCase()}</s-badge>
+                  )}
+                </div>
+                <span style={{ fontSize: "13px", color: "#6d7175", flex: 2, fontFamily: "monospace" }}>{c.requiredTag}</span>
+                <span style={{ fontSize: "13px", color: "#6d7175", flex: 2, fontFamily: "monospace" }}>{c.blockedTag}</span>
+                <span style={{ fontSize: "14px", width: "80px" }}>{c.usageCount}</span>
+                <div style={{ width: "60px" }}>
+                  <s-button onClick={() => navigate(`/app/single-codes/${c.numericId}`)}>View</s-button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </s-section>
+      )}
+    </s-page>
+  );
+}
+
+export const headers: HeadersFunction = (h) => boundary.headers(h);

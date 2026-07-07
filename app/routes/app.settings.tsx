@@ -128,6 +128,68 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { synced: updated };
   }
 
+  if (intent === "syncCustomers") {
+    let cursor: string | null = null;
+    let synced = 0;
+    const errors: string[] = [];
+
+    try {
+      do {
+        // Fetch a page of customers with their tags
+        const res = await admin.graphql(
+          `#graphql
+          query GetCustomers($after: String) {
+            customers(first: 50, after: $after) {
+              nodes { id tags }
+              pageInfo { hasNextPage endCursor }
+            }
+          }`,
+          { variables: { after: cursor } }
+        );
+        const data = await res.json();
+        const customers: Array<{ id: string; tags: string[] }> = data.data?.customers?.nodes ?? [];
+        const pageInfo = data.data?.customers?.pageInfo;
+        cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
+
+        if (customers.length === 0) break;
+
+        // Batch metafield writes — 25 at a time
+        const metafields = customers.map((c) => ({
+          ownerId: c.id,
+          namespace: "custom",
+          key: "bajio_discount_tags",
+          type: "json",
+          value: JSON.stringify(c.tags ?? []),
+        }));
+
+        for (let i = 0; i < metafields.length; i += 25) {
+          const batch = metafields.slice(i, i + 25);
+          const updateRes = await admin.graphql(
+            `#graphql
+            mutation SyncCustomerTags($metafields: [MetafieldsSetInput!]!) {
+              metafieldsSet(metafields: $metafields) {
+                userErrors { field message }
+              }
+            }`,
+            { variables: { metafields: batch } }
+          );
+          const updateData = await updateRes.json();
+          const updateErrors = updateData.data?.metafieldsSet?.userErrors ?? [];
+          if (updateErrors.length > 0) {
+            errors.push(...updateErrors.map((e: { message: string }) => e.message));
+          } else {
+            synced += batch.length;
+          }
+        }
+      } while (cursor);
+    } catch (err: unknown) {
+      return { error: `Customer sync failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+
+    if (errors.length > 0) return { error: `Synced ${synced} customers, but some failed: ${errors.slice(0, 3).join("; ")}` };
+    return { syncedCustomers: synced };
+  }
+
   return { error: "Unknown action." };
 };
 
@@ -141,7 +203,8 @@ export default function SettingsPage() {
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (isFetcherBusy && fetcher.formData?.get("intent") === "sync") {
+    const intent = fetcher.formData?.get("intent");
+    if (isFetcherBusy && (intent === "sync" || intent === "syncCustomers")) {
       setForcedIdle(false);
       syncTimeoutRef.current = setTimeout(() => setForcedIdle(true), 60000);
     } else {
@@ -173,6 +236,12 @@ export default function SettingsPage() {
   const handleSync = () => {
     const form = new FormData();
     form.append("intent", "sync");
+    fetcher.submit(form, { method: "post" });
+  };
+
+  const handleSyncCustomers = () => {
+    const form = new FormData();
+    form.append("intent", "syncCustomers");
     fetcher.submit(form, { method: "post" });
   };
 
@@ -240,6 +309,32 @@ export default function SettingsPage() {
             />
             <s-button variant="primary" onClick={handleAdd} disabled={isSubmitting || !newType.trim()}>
               Add
+            </s-button>
+          </div>
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Sync customer tags">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            Single codes check customer eligibility using a synced copy of customer tags.
+            Run this once to backfill all existing customers, and again any time you need to force a refresh.
+            After the initial sync, customer tags are kept up to date automatically whenever a customer is updated.
+          </s-paragraph>
+          {(result as { syncedCustomers?: number })?.syncedCustomers !== undefined && (
+            <s-banner tone="success">
+              <s-paragraph>
+                Synced {(result as { syncedCustomers: number }).syncedCustomers} customer{(result as { syncedCustomers: number }).syncedCustomers !== 1 ? "s" : ""} successfully.
+              </s-paragraph>
+            </s-banner>
+          )}
+          <div>
+            <s-button
+              variant="primary"
+              onClick={handleSyncCustomers}
+              disabled={isSubmitting}
+            >
+              {isSubmitting && fetcher.formData?.get("intent") === "syncCustomers" ? "Syncing customers…" : "Sync all customers"}
             </s-button>
           </div>
         </s-stack>
