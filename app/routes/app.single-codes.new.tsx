@@ -238,36 +238,35 @@ export default function NewSingleCodePage() {
       )}
 
       <s-section heading="Details">
-        <s-field label="Title">
-          <s-text-field
-            value={title}
-            placeholder="e.g. Guide 50% Discount"
-            onInput={(e: { target: { value: string } }) => setTitle(e.target.value)}
-          />
-        </s-field>
-        <s-field label="Discount code">
-          <s-text-field
-            value={code}
-            placeholder="e.g. GUIDE50"
-            onInput={(e: { target: { value: string } }) => setCode(e.target.value.toUpperCase())}
-          />
-        </s-field>
-        <s-field label="Discount percentage">
-          <s-text-field
-            type="number"
-            value={percentage}
-            min="1"
-            max="100"
-            onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
-          />
-        </s-field>
-        <s-field label="Expiry date (optional)">
-          <s-text-field
-            type="date"
-            value={endsAt}
-            onInput={(e: { target: { value: string } }) => setEndsAt(e.target.value)}
-          />
-        </s-field>
+        <s-text-field
+          label="Title"
+          value={title}
+          placeholder="e.g. Guide 50% Discount"
+          helpText="Shown in the Shopify admin discounts list"
+          onInput={(e: { target: { value: string } }) => setTitle(e.target.value)}
+        />
+        <s-text-field
+          label="Discount code"
+          value={code}
+          placeholder="e.g. GUIDE50"
+          helpText="The code customers enter at checkout"
+          onInput={(e: { target: { value: string } }) => setCode(e.target.value.toUpperCase())}
+        />
+        <s-text-field
+          label="Discount percentage"
+          type="number"
+          value={percentage}
+          min="1"
+          max="100"
+          helpText="Percentage off the eligible product"
+          onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
+        />
+        <s-text-field
+          label="Expiry date (optional)"
+          type="date"
+          value={endsAt}
+          onInput={(e: { target: { value: string } }) => setEndsAt(e.target.value)}
+        />
       </s-section>
 
       <s-section heading="Eligible items">
@@ -283,20 +282,20 @@ export default function NewSingleCodePage() {
       </s-section>
 
       <s-section heading="Customer eligibility">
-        <s-field label="Required customer tag" hint="Customers must have this tag to use the code">
-          <s-text-field
-            value={requiredTag}
-            placeholder="e.g. GUIDE50"
-            onInput={(e: { target: { value: string } }) => setRequiredTag(e.target.value)}
-          />
-        </s-field>
-        <s-field label="Blocked customer tag" hint="Customers with this tag will be rejected (e.g. usage limit reached)">
-          <s-text-field
-            value={blockedTag}
-            placeholder="e.g. GUIDE50-USED"
-            onInput={(e: { target: { value: string } }) => setBlockedTag(e.target.value)}
-          />
-        </s-field>
+        <s-text-field
+          label="Required customer tag"
+          value={requiredTag}
+          placeholder="e.g. GUIDE50"
+          helpText="Customers must have this tag to use the code"
+          onInput={(e: { target: { value: string } }) => setRequiredTag(e.target.value)}
+        />
+        <s-text-field
+          label="Blocked customer tag"
+          value={blockedTag}
+          placeholder="e.g. GUIDE50-USED"
+          helpText="Customers with this tag will be rejected (usage limit reached)"
+          onInput={(e: { target: { value: string } }) => setBlockedTag(e.target.value)}
+        />
       </s-section>
 
       <s-section heading="Combinations">

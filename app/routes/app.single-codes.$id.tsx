@@ -334,29 +334,29 @@ export default function SingleCodeDetailsPage() {
           </div>
         ) : (
           <>
-            <s-field label="Required customer tag" hint="Customers must have this tag to use the code">
-              <s-text-field
-                value={requiredTag}
-                placeholder="e.g. GUIDE50"
-                onInput={(e: { target: { value: string } }) => setRequiredTag(e.target.value)}
-              />
-            </s-field>
-            <s-field label="Blocked customer tag" hint="Customers with this tag will be rejected">
-              <s-text-field
-                value={blockedTag}
-                placeholder="e.g. GUIDE50-USED"
-                onInput={(e: { target: { value: string } }) => setBlockedTag(e.target.value)}
-              />
-            </s-field>
-            <s-field label="Discount percentage">
-              <s-text-field
-                type="number"
-                value={percentage}
-                min="1"
-                max="100"
-                onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
-              />
-            </s-field>
+            <s-text-field
+              label="Required customer tag"
+              value={requiredTag}
+              placeholder="e.g. GUIDE50"
+              helpText="Customers must have this tag to use the code"
+              onInput={(e: { target: { value: string } }) => setRequiredTag(e.target.value)}
+            />
+            <s-text-field
+              label="Blocked customer tag"
+              value={blockedTag}
+              placeholder="e.g. GUIDE50-USED"
+              helpText="Customers with this tag will be rejected (usage limit reached)"
+              onInput={(e: { target: { value: string } }) => setBlockedTag(e.target.value)}
+            />
+            <s-text-field
+              label="Discount percentage"
+              type="number"
+              value={percentage}
+              min="1"
+              max="100"
+              helpText="Percentage off the eligible product"
+              onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
+            />
           </>
         )}
       </s-section>
