@@ -302,23 +302,20 @@ export default function NewSingleCodePage() {
         <s-paragraph>By default, this discount cannot be combined with other discounts.</s-paragraph>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" }}>
           <s-checkbox
+            label="Product discounts"
             checked={combinesWithProduct}
             onChange={(e: { target: { checked: boolean } }) => setCombinesWithProduct(e.target.checked)}
-          >
-            Product discounts
-          </s-checkbox>
+          />
           <s-checkbox
+            label="Order discounts"
             checked={combinesWithOrder}
             onChange={(e: { target: { checked: boolean } }) => setCombinesWithOrder(e.target.checked)}
-          >
-            Order discounts
-          </s-checkbox>
+          />
           <s-checkbox
+            label="Shipping discounts"
             checked={combinesWithShipping}
             onChange={(e: { target: { checked: boolean } }) => setCombinesWithShipping(e.target.checked)}
-          >
-            Shipping discounts
-          </s-checkbox>
+          />
         </div>
       </s-section>
 
