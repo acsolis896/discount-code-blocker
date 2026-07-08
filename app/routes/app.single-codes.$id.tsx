@@ -81,6 +81,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     collectionIds,
     collectionTitles,
     blockedProductTypes: (config.blockedProductTypes as string[]) ?? [],
+    metafieldRaw: metafieldValue ?? null,
   };
 };
 
@@ -360,6 +361,21 @@ export default function SingleCodeDetailsPage() {
               onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
             />
           </>
+        )}
+      </s-section>
+
+      <s-section heading="Debug info">
+        <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Discount ID</div>
+        <code style={{ fontSize: "11px", wordBreak: "break-all" }}>{loaderData.discountId}</code>
+        <div style={{ fontSize: "12px", color: "#6d7175", marginTop: "12px", marginBottom: "4px" }}>Function config metafield</div>
+        {loaderData.metafieldRaw ? (
+          <pre style={{ fontSize: "11px", background: "#f6f6f7", padding: "8px", borderRadius: "4px", overflow: "auto", maxHeight: "200px" }}>
+            {JSON.stringify(JSON.parse(loaderData.metafieldRaw), null, 2)}
+          </pre>
+        ) : (
+          <s-banner tone="critical">
+            <s-paragraph>Metafield is missing — the function has no config and will not apply this discount. Delete and recreate this single code.</s-paragraph>
+          </s-banner>
         )}
       </s-section>
 
