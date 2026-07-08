@@ -1,41 +1,9 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 
+// Customer eligibility is now stored in each discount's metafield (eligibleCustomerIds).
+// Use the "Sync customer tags" button in Settings after updating customer tags in Shopify admin.
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin, payload } = await authenticate.webhook(request);
-
-  const customer = payload as {
-    id: number;
-    tags: string;
-  };
-
-  if (!customer?.id || !admin) return new Response();
-
-  const customerId = `gid://shopify/Customer/${customer.id}`;
-  // Shopify sends tags as a comma-separated string
-  const tags = customer.tags
-    ? customer.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
-    : [];
-
-  await admin.graphql(
-    `#graphql
-    mutation SyncCustomerTags($metafields: [MetafieldsSetInput!]!) {
-      metafieldsSet(metafields: $metafields) {
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        metafields: [{
-          ownerId: customerId,
-          namespace: "custom",
-          key: "bajio_discount_tags",
-          type: "json",
-          value: JSON.stringify(tags),
-        }],
-      },
-    }
-  );
-
+  await authenticate.webhook(request);
   return new Response();
 };

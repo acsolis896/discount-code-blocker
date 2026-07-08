@@ -133,80 +133,113 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const errors: string[] = [];
 
     try {
-      // Only fetch customers who have at least one of the configured single-code tags.
-      // This is far smaller than all customers and won't time out.
       const singleCodes = await db.singleCodeDiscount.findMany({
         where: { shop: session.shop },
-        select: { requiredTag: true, blockedTag: true },
+        select: { discountId: true, requiredTag: true, blockedTag: true },
       });
 
-      // Collect unique non-empty tags across all single codes
-      const allTags = Array.from(new Set(
-        singleCodes.flatMap((r: { requiredTag: string; blockedTag: string }) =>
-          [r.requiredTag, r.blockedTag].filter(Boolean)
-        )
-      ));
+      if (singleCodes.length === 0) return { syncedCustomers: 0 };
 
-      if (allTags.length === 0) {
-        return { syncedCustomers: 0 };
-      }
+      for (const code of singleCodes) {
+        const eligible: string[] = [];
+        const blocked: string[] = [];
 
-      // Query customers matching any of these tags
-      const tagQuery = allTags.map((t) => `tag:${t}`).join(" OR ");
-      let cursor: string | null = null;
+        // Fetch customers with required tag
+        if (code.requiredTag) {
+          let cursor: string | null = null;
+          do {
+            const res = await admin.graphql(
+              `#graphql
+              query GetTaggedCustomers($query: String!, $after: String) {
+                customers(first: 250, query: $query, after: $after) {
+                  nodes { id }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }`,
+              { variables: { query: `tag:${code.requiredTag}`, after: cursor } }
+            );
+            const data = await res.json();
+            const nodes: Array<{ id: string }> = data.data?.customers?.nodes ?? [];
+            for (const c of nodes) eligible.push(c.id);
+            const pageInfo = data.data?.customers?.pageInfo;
+            cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
+          } while (cursor);
+        }
 
-      do {
-        const res = await admin.graphql(
+        // Fetch customers with blocked tag
+        if (code.blockedTag) {
+          let cursor: string | null = null;
+          do {
+            const res = await admin.graphql(
+              `#graphql
+              query GetBlockedCustomers($query: String!, $after: String) {
+                customers(first: 250, query: $query, after: $after) {
+                  nodes { id }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }`,
+              { variables: { query: `tag:${code.blockedTag}`, after: cursor } }
+            );
+            const data = await res.json();
+            const nodes: Array<{ id: string }> = data.data?.customers?.nodes ?? [];
+            for (const c of nodes) blocked.push(c.id);
+            const pageInfo = data.data?.customers?.pageInfo;
+            cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
+          } while (cursor);
+        }
+
+        // Fetch existing metafield to preserve other config fields
+        const mfRes = await admin.graphql(
           `#graphql
-          query GetTaggedCustomers($query: String!, $after: String) {
-            customers(first: 50, query: $query, after: $after) {
-              nodes { id tags }
-              pageInfo { hasNextPage endCursor }
+          query GetMF($id: ID!) {
+            discountNode(id: $id) {
+              metafield(namespace: "$app", key: "function-configuration") { value }
             }
           }`,
-          { variables: { query: tagQuery, after: cursor } }
+          { variables: { id: code.discountId } }
         );
-        const data = await res.json();
-        const customers: Array<{ id: string; tags: string[] }> = data.data?.customers?.nodes ?? [];
-        const pageInfo = data.data?.customers?.pageInfo;
-        cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
+        const mfData = await mfRes.json();
+        let existing: Record<string, unknown> = {};
+        try { existing = JSON.parse(mfData.data?.discountNode?.metafield?.value); } catch {}
 
-        if (customers.length === 0) break;
+        const newConfig = {
+          ...existing,
+          ...(code.requiredTag ? { eligibleCustomerIds: eligible } : {}),
+          ...(code.blockedTag ? { blockedCustomerIds: blocked } : {}),
+        };
 
-        // Write metafields in batches of 25
-        const metafields = customers.map((c) => ({
-          ownerId: c.id,
-          namespace: "custom",
-          key: "bajio_discount_tags",
-          type: "json",
-          value: JSON.stringify(c.tags ?? []),
-        }));
-
-        for (let i = 0; i < metafields.length; i += 25) {
-          const batch = metafields.slice(i, i + 25);
-          const updateRes = await admin.graphql(
-            `#graphql
-            mutation SyncCustomerTags($metafields: [MetafieldsSetInput!]!) {
-              metafieldsSet(metafields: $metafields) {
-                userErrors { field message }
-              }
-            }`,
-            { variables: { metafields: batch } }
-          );
-          const updateData = await updateRes.json();
-          const updateErrors = updateData.data?.metafieldsSet?.userErrors ?? [];
-          if (updateErrors.length > 0) {
-            errors.push(...updateErrors.map((e: { message: string }) => e.message));
-          } else {
-            synced += batch.length;
+        const updateRes = await admin.graphql(
+          `#graphql
+          mutation UpdateDiscountMF($metafields: [MetafieldsSetInput!]!) {
+            metafieldsSet(metafields: $metafields) {
+              userErrors { field message }
+            }
+          }`,
+          {
+            variables: {
+              metafields: [{
+                ownerId: code.discountId,
+                namespace: "$app",
+                key: "function-configuration",
+                type: "json",
+                value: JSON.stringify(newConfig),
+              }],
+            },
           }
+        );
+        const updateData = await updateRes.json();
+        const updateErrors = updateData.data?.metafieldsSet?.userErrors ?? [];
+        if (updateErrors.length > 0) {
+          errors.push(...updateErrors.map((e: { message: string }) => e.message));
+        } else {
+          synced += eligible.length;
         }
-      } while (cursor);
+      }
     } catch (err: unknown) {
       return { error: `Customer sync failed: ${err instanceof Error ? err.message : String(err)}` };
     }
 
-    if (errors.length > 0) return { error: `Synced ${synced} customers, but some failed: ${errors.slice(0, 3).join("; ")}` };
+    if (errors.length > 0) return { error: `Sync completed but some updates failed: ${errors.slice(0, 3).join("; ")}` };
     return { syncedCustomers: synced };
   }
 
@@ -337,10 +370,9 @@ export default function SettingsPage() {
       <s-section heading="Sync customer tags">
         <s-stack direction="block" gap="base">
           <s-paragraph>
-            Single codes check customer eligibility using a synced copy of customer tags.
-            Run this once to backfill all existing customers, and again any time you need to force a refresh.
-            After the initial sync, customer tags are kept up to date automatically whenever a customer is updated.
-            Only customers who have at least one of your configured single code tags will be synced.
+            Single codes restrict access by customer tag. Clicking sync queries all customers who have your
+            configured required or blocked tags and saves their IDs directly to the discount's configuration.
+            Run this after adding or removing customer tags in Shopify admin.
           </s-paragraph>
           {(result as { syncedCustomers?: number })?.syncedCustomers !== undefined && (
             <s-banner tone="success">

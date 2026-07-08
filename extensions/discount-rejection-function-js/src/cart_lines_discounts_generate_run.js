@@ -42,34 +42,20 @@ export function cartLinesDiscountsGenerateRun(input) {
     return reject("This discount code can't be used when a gift item is in your cart.");
   }
 
-  // 2. Tag-based checks (only for single-code discounts that have tag config)
-  if (requiredTag || blockedTag) {
+  // 2. Eligibility check via synced customer ID lists (populated by the app's sync button)
+  const eligibleCustomerIds = config.eligibleCustomerIds;
+  if (Array.isArray(eligibleCustomerIds)) {
     const customer = input.cart.buyerIdentity?.customer;
-
-    // Not logged in
     if (!customer) {
       return reject("Please log in to your account to use this discount code.");
     }
-
-    // Read synced tags from the customer metafield written by the app webhook
-    let customerTags = [];
-    const mfValue = customer.tagsMf?.value;
-    if (mfValue) {
-      try { customerTags = JSON.parse(mfValue); } catch { /* empty */ }
-    }
-
-    // Metafield not yet synced — treat as not eligible
-    if (!mfValue) {
-      return reject("Please log in to your account to use this discount code.");
-    }
-
-    // Missing required tag
-    if (requiredTag && !customerTags.includes(requiredTag)) {
+    if (!eligibleCustomerIds.includes(customer.id)) {
       return reject("This discount code is not available for your account.");
     }
 
-    // Has blocked tag (usage limit reached)
-    if (blockedTag && customerTags.includes(blockedTag)) {
+    // Blocked customers (usage limit reached)
+    const blockedCustomerIds = config.blockedCustomerIds ?? [];
+    if (blockedCustomerIds.includes(customer.id)) {
       return reject("You've reached your usage limit for this discount code.");
     }
   }
