@@ -135,11 +135,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     try {
       do {
-        // Fetch a page of customers with their tags
+        // Fetch a page of customers with their tags (small page to avoid throttling)
         const res = await admin.graphql(
           `#graphql
           query GetCustomers($after: String) {
-            customers(first: 50, after: $after) {
+            customers(first: 20, after: $after) {
               nodes { id tags }
               pageInfo { hasNextPage endCursor }
             }
@@ -147,13 +147,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           { variables: { after: cursor } }
         );
         const data = await res.json();
+        if (data.errors?.some((e: { message: string }) => e.message?.toLowerCase().includes("throttl"))) {
+          // Wait and retry once if throttled
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
         const customers: Array<{ id: string; tags: string[] }> = data.data?.customers?.nodes ?? [];
         const pageInfo = data.data?.customers?.pageInfo;
         cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
 
         if (customers.length === 0) break;
 
-        // Batch metafield writes — 25 at a time
+        // Batch metafield writes — 20 at a time
         const metafields = customers.map((c) => ({
           ownerId: c.id,
           namespace: "custom",
@@ -162,8 +167,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           value: JSON.stringify(c.tags ?? []),
         }));
 
-        for (let i = 0; i < metafields.length; i += 25) {
-          const batch = metafields.slice(i, i + 25);
+        for (let i = 0; i < metafields.length; i += 20) {
+          const batch = metafields.slice(i, i + 20);
           const updateRes = await admin.graphql(
             `#graphql
             mutation SyncCustomerTags($metafields: [MetafieldsSetInput!]!) {
@@ -181,6 +186,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             synced += batch.length;
           }
         }
+
+        // Pause between pages to respect rate limits
+        if (cursor) await new Promise((r) => setTimeout(r, 500));
       } while (cursor);
     } catch (err: unknown) {
       return { error: `Customer sync failed: ${err instanceof Error ? err.message : String(err)}` };
