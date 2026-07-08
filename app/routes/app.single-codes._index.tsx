@@ -15,37 +15,39 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
     if (rows.length === 0) return { codes: [], dbError: null };
 
-    // Fetch usage counts from Shopify for each discount
-    const gids = rows.map((r) => r.discountId);
-    const res = await admin.graphql(
-      `#graphql
-      query GetSingleCodes($ids: [ID!]!) {
-        nodes(ids: $ids) {
-          ... on DiscountCodeNode {
-            id
-            discount {
-              ... on DiscountCodeApp {
-                title
-                status
-                asyncUsageCount
-              }
-            }
-          }
-        }
-      }`,
-      { variables: { ids: gids } }
-    );
-    const data = await res.json();
+    // Fetch status/usage from Shopify using discountNode (nodes() doesn't expose discount field)
     const nodeMap: Record<string, { title: string; status: string; usageCount: number }> = {};
-    for (const node of data.data?.nodes ?? []) {
-      if (node?.id) {
-        nodeMap[node.id] = {
-          title: node.discount?.title ?? "",
-          status: node.discount?.status ?? "UNKNOWN",
-          usageCount: node.discount?.asyncUsageCount ?? 0,
-        };
-      }
-    }
+    await Promise.all(
+      rows.map(async (r) => {
+        try {
+          const res = await admin.graphql(
+            `#graphql
+            query GetSingleCode($id: ID!) {
+              discountNode(id: $id) {
+                id
+                discount {
+                  ... on DiscountCodeApp {
+                    title
+                    status
+                    asyncUsageCount
+                  }
+                }
+              }
+            }`,
+            { variables: { id: r.discountId } }
+          );
+          const data = await res.json();
+          const node = data.data?.discountNode;
+          if (node?.id) {
+            nodeMap[node.id] = {
+              title: node.discount?.title ?? "",
+              status: node.discount?.status ?? "UNKNOWN",
+              usageCount: node.discount?.asyncUsageCount ?? 0,
+            };
+          }
+        } catch { /* skip on error — show defaults */ }
+      })
+    );
 
     const codes = rows.map((r) => ({
       id: r.id,
