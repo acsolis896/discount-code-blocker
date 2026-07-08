@@ -129,36 +129,51 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "syncCustomers") {
-    let cursor: string | null = null;
     let synced = 0;
     const errors: string[] = [];
 
     try {
+      // Only fetch customers who have at least one of the configured single-code tags.
+      // This is far smaller than all customers and won't time out.
+      const singleCodes = await db.singleCodeDiscount.findMany({
+        where: { shop: session.shop },
+        select: { requiredTag: true, blockedTag: true },
+      });
+
+      // Collect unique non-empty tags across all single codes
+      const allTags = Array.from(new Set(
+        singleCodes.flatMap((r: { requiredTag: string; blockedTag: string }) =>
+          [r.requiredTag, r.blockedTag].filter(Boolean)
+        )
+      ));
+
+      if (allTags.length === 0) {
+        return { syncedCustomers: 0 };
+      }
+
+      // Query customers matching any of these tags
+      const tagQuery = allTags.map((t) => `tag:${t}`).join(" OR ");
+      let cursor: string | null = null;
+
       do {
-        // Fetch a page of customers with their tags (small page to avoid throttling)
         const res = await admin.graphql(
           `#graphql
-          query GetCustomers($after: String) {
-            customers(first: 20, after: $after) {
+          query GetTaggedCustomers($query: String!, $after: String) {
+            customers(first: 50, query: $query, after: $after) {
               nodes { id tags }
               pageInfo { hasNextPage endCursor }
             }
           }`,
-          { variables: { after: cursor } }
+          { variables: { query: tagQuery, after: cursor } }
         );
         const data = await res.json();
-        if (data.errors?.some((e: { message: string }) => e.message?.toLowerCase().includes("throttl"))) {
-          // Wait and retry once if throttled
-          await new Promise((r) => setTimeout(r, 2000));
-          continue;
-        }
         const customers: Array<{ id: string; tags: string[] }> = data.data?.customers?.nodes ?? [];
         const pageInfo = data.data?.customers?.pageInfo;
         cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
 
         if (customers.length === 0) break;
 
-        // Batch metafield writes — 20 at a time
+        // Write metafields in batches of 25
         const metafields = customers.map((c) => ({
           ownerId: c.id,
           namespace: "custom",
@@ -167,8 +182,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           value: JSON.stringify(c.tags ?? []),
         }));
 
-        for (let i = 0; i < metafields.length; i += 20) {
-          const batch = metafields.slice(i, i + 20);
+        for (let i = 0; i < metafields.length; i += 25) {
+          const batch = metafields.slice(i, i + 25);
           const updateRes = await admin.graphql(
             `#graphql
             mutation SyncCustomerTags($metafields: [MetafieldsSetInput!]!) {
@@ -186,9 +201,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             synced += batch.length;
           }
         }
-
-        // Pause between pages to respect rate limits
-        if (cursor) await new Promise((r) => setTimeout(r, 500));
       } while (cursor);
     } catch (err: unknown) {
       return { error: `Customer sync failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -328,6 +340,7 @@ export default function SettingsPage() {
             Single codes check customer eligibility using a synced copy of customer tags.
             Run this once to backfill all existing customers, and again any time you need to force a refresh.
             After the initial sync, customer tags are kept up to date automatically whenever a customer is updated.
+            Only customers who have at least one of your configured single code tags will be synced.
           </s-paragraph>
           {(result as { syncedCustomers?: number })?.syncedCustomers !== undefined && (
             <s-banner tone="success">
