@@ -7,12 +7,17 @@ import db from "../db.server";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
 
-  const rows = await db.singleCodeDiscount.findMany({
-    where: { shop: session.shop },
-    orderBy: { createdAt: "desc" },
-  });
+  let rows: Array<{ id: string; discountId: string; code: string; requiredTag: string; blockedTag: string }> = [];
+  try {
+    rows = await db.singleCodeDiscount.findMany({
+      where: { shop: session.shop },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (err: unknown) {
+    return { codes: [], dbError: err instanceof Error ? err.message : String(err) };
+  }
 
-  if (rows.length === 0) return { codes: [] };
+  if (rows.length === 0) return { codes: [], dbError: null };
 
   // Fetch usage counts from Shopify for each discount
   const gids = rows.map((r) => r.discountId);
@@ -58,15 +63,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     usageCount: nodeMap[r.discountId]?.usageCount ?? 0,
   }));
 
-  return { codes };
+  return { codes, dbError: null };
 };
 
 export default function SingleCodesPage() {
-  const { codes } = useLoaderData<typeof loader>();
+  const { codes, dbError } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
   return (
     <s-page heading="Single Codes">
+      {dbError && (
+        <s-banner tone="critical" style={{ marginBottom: "16px" }}>
+          <s-paragraph>Database error: {dbError}. The table may not have been created yet — try redeploying the app.</s-paragraph>
+        </s-banner>
+      )}
       <div style={{ marginBottom: "20px" }}>
         <s-button variant="primary" onClick={() => navigate("/app/single-codes/new")}>
           Create single code

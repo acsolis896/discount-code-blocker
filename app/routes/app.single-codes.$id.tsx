@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useNavigate, useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -201,7 +201,9 @@ export default function SingleCodeDetailsPage() {
   const isSaving = fetcher.state !== "idle";
   const result = fetcher.data as { error?: string; success?: boolean } | undefined;
 
-  if (result?.success && editing) setEditing(false);
+  useEffect(() => {
+    if (result?.success && editing) setEditing(false);
+  }, [result]);
 
   const handlePickCollections = useCallback(async () => {
     const selected = await shopify.resourcePicker({

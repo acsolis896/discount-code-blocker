@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useNavigate, useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -173,9 +173,11 @@ export default function NewSingleCodePage() {
   const isSubmitting = fetcher.state !== "idle";
   const result = fetcher.data as { error?: string; success?: boolean; numericId?: string } | undefined;
 
-  if (result?.success && result.numericId) {
-    navigate(`/app/single-codes/${result.numericId}`);
-  }
+  useEffect(() => {
+    if (result?.success && result.numericId) {
+      navigate(`/app/single-codes/${result.numericId}`);
+    }
+  }, [result, navigate]);
 
   const handlePickProducts = useCallback(async () => {
     const selected = await shopify.resourcePicker({
