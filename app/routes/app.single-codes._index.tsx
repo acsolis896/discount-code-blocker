@@ -5,65 +5,64 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
-
-  let rows: Array<{ id: string; discountId: string; code: string; requiredTag: string; blockedTag: string }> = [];
   try {
-    rows = await db.singleCodeDiscount.findMany({
+    const { admin, session } = await authenticate.admin(request);
+
+    const rows = await db.singleCodeDiscount.findMany({
       where: { shop: session.shop },
       orderBy: { createdAt: "desc" },
     });
-  } catch (err: unknown) {
-    return { codes: [], dbError: err instanceof Error ? err.message : String(err) };
-  }
 
-  if (rows.length === 0) return { codes: [], dbError: null };
+    if (rows.length === 0) return { codes: [], dbError: null };
 
-  // Fetch usage counts from Shopify for each discount
-  const gids = rows.map((r) => r.discountId);
-  const res = await admin.graphql(
-    `#graphql
-    query GetSingleCodes($ids: [ID!]!) {
-      nodes(ids: $ids) {
-        ... on DiscountCodeNode {
-          id
-          discount {
-            ... on DiscountCodeApp {
-              title
-              status
-              asyncUsageCount
+    // Fetch usage counts from Shopify for each discount
+    const gids = rows.map((r) => r.discountId);
+    const res = await admin.graphql(
+      `#graphql
+      query GetSingleCodes($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on DiscountCodeNode {
+            id
+            discount {
+              ... on DiscountCodeApp {
+                title
+                status
+                asyncUsageCount
+              }
             }
           }
         }
+      }`,
+      { variables: { ids: gids } }
+    );
+    const data = await res.json();
+    const nodeMap: Record<string, { title: string; status: string; usageCount: number }> = {};
+    for (const node of data.data?.nodes ?? []) {
+      if (node?.id) {
+        nodeMap[node.id] = {
+          title: node.discount?.title ?? "",
+          status: node.discount?.status ?? "UNKNOWN",
+          usageCount: node.discount?.asyncUsageCount ?? 0,
+        };
       }
-    }`,
-    { variables: { ids: gids } }
-  );
-  const data = await res.json();
-  const nodeMap: Record<string, { title: string; status: string; usageCount: number }> = {};
-  for (const node of data.data?.nodes ?? []) {
-    if (node?.id) {
-      nodeMap[node.id] = {
-        title: node.discount?.title ?? "",
-        status: node.discount?.status ?? "UNKNOWN",
-        usageCount: node.discount?.asyncUsageCount ?? 0,
-      };
     }
+
+    const codes = rows.map((r) => ({
+      id: r.id,
+      discountId: r.discountId,
+      numericId: r.discountId.split("/").pop(),
+      code: r.code,
+      requiredTag: r.requiredTag,
+      blockedTag: r.blockedTag,
+      title: nodeMap[r.discountId]?.title ?? r.code,
+      status: nodeMap[r.discountId]?.status ?? "UNKNOWN",
+      usageCount: nodeMap[r.discountId]?.usageCount ?? 0,
+    }));
+
+    return { codes, dbError: null };
+  } catch (err: unknown) {
+    return { codes: [], dbError: err instanceof Error ? err.message : String(err) };
   }
-
-  const codes = rows.map((r) => ({
-    id: r.id,
-    discountId: r.discountId,
-    numericId: r.discountId.split("/").pop(),
-    code: r.code,
-    requiredTag: r.requiredTag,
-    blockedTag: r.blockedTag,
-    title: nodeMap[r.discountId]?.title ?? r.code,
-    status: nodeMap[r.discountId]?.status ?? "UNKNOWN",
-    usageCount: nodeMap[r.discountId]?.usageCount ?? 0,
-  }));
-
-  return { codes, dbError: null };
 };
 
 export default function SingleCodesPage() {
