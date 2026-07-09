@@ -176,10 +176,52 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "syncCustomers") {
     const codes = await db.singleCodeDiscount.findMany({
       where: { shop: session.shop },
-      select: { discountId: true, requiredTag: true, blockedTag: true, configJson: true, functionNodeId: true },
+      select: { discountId: true, code: true, requiredTag: true, blockedTag: true, configJson: true, functionNodeId: true },
     });
 
     if (codes.length === 0) return { syncedCustomers: 0 };
+
+    // For any discount missing functionNodeId, scan discountNodes to find the real function node now
+    const needsLookup = codes.filter((c: { functionNodeId: string | null }) => !c.functionNodeId);
+    if (needsLookup.length > 0) {
+      const needsMap = new Map(needsLookup.map((c: { code: string; discountId: string; functionNodeId: string | null }) => [c.code.toUpperCase(), c]));
+      let scanCursor: string | null = null;
+      do {
+        const scanRes = await admin.graphql(
+          `#graphql
+          query FindFunctionNodes($after: String) {
+            discountNodes(first: 50, after: $after, query: "function_id:discount-rejection-function-js") {
+              nodes {
+                id
+                discount {
+                  ... on DiscountCodeApp {
+                    codes(first: 1) { nodes { code } }
+                  }
+                }
+              }
+              pageInfo { hasNextPage endCursor }
+            }
+          }`,
+          { variables: { after: scanCursor } }
+        );
+        const scanData = await scanRes.json();
+        for (const n of scanData.data?.discountNodes?.nodes ?? []) {
+          if (!n.id.includes("DiscountCodeNode")) continue;
+          const nodeCode = n.discount?.codes?.nodes?.[0]?.code?.toUpperCase();
+          if (nodeCode && needsMap.has(nodeCode)) {
+            const rec = needsMap.get(nodeCode)!;
+            rec.functionNodeId = n.id;
+            await db.singleCodeDiscount.updateMany({
+              where: { shop: session.shop, discountId: rec.discountId },
+              data: { functionNodeId: n.id },
+            });
+            needsMap.delete(nodeCode);
+          }
+        }
+        const pi = scanData.data?.discountNodes?.pageInfo;
+        scanCursor = (pi?.hasNextPage && needsMap.size > 0) ? pi.endCursor : null;
+      } while (scanCursor);
+    }
 
     const errors: string[] = [];
     let syncedCount = 0;
@@ -196,7 +238,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const eligibleCustomerIds: string[] = [];
       const blockedCustomerIds: string[] = [];
 
-      // Fetch customers with requiredTag
       if (code.requiredTag) {
         let cursor: string | null = null;
         do {
@@ -217,7 +258,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         } while (cursor);
       }
 
-      // Fetch customers with blockedTag
       if (code.blockedTag) {
         let cursor: string | null = null;
         do {
@@ -238,10 +278,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         } while (cursor);
       }
 
-      // Always reconstruct full config from DB — never read from Shopify
       const fullConfig = JSON.stringify({ ...baseConfig, eligibleCustomerIds, blockedCustomerIds });
 
-      // Update DB with latest customer lists
       await db.singleCodeDiscount.update({
         where: { shop_discountId: { shop: session.shop, discountId: code.discountId } },
         data: {
@@ -250,6 +288,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       });
 
+      // Write to the real function node (discovered above if it was missing)
+      const writeTarget = code.functionNodeId ?? code.discountId;
       const mfRes = await admin.graphql(
         `#graphql
         mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
@@ -257,7 +297,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             userErrors { field message }
           }
         }`,
-        { variables: { metafields: [{ ownerId: code.functionNodeId ?? code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
+        { variables: { metafields: [{ ownerId: writeTarget, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
       );
       const mfData = await mfRes.json();
       const mfErrors = mfData.data?.metafieldsSet?.userErrors ?? [];
