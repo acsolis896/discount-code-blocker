@@ -186,6 +186,43 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return { success: true };
   }
 
+  if (intent === "findAllNodes") {
+    // Scan all function nodes and return every one with this code in it
+    const targetCode = String(formData.get("code") || "").toUpperCase();
+    const found: Array<{ id: string; metafieldValue: string | null }> = [];
+    let cursor: string | null = null;
+    do {
+      const res = await admin.graphql(
+        `#graphql
+        query ScanNodes($after: String) {
+          discountNodes(first: 50, after: $after, query: "function_id:discount-rejection-function-js") {
+            nodes {
+              id
+              discount {
+                ... on DiscountCodeApp {
+                  codes(first: 10) { nodes { code } }
+                }
+              }
+              metafield(namespace: "$app", key: "function-configuration") { value }
+            }
+            pageInfo { hasNextPage endCursor }
+          }
+        }`,
+        { variables: { after: cursor } }
+      );
+      const data = await res.json();
+      for (const node of data.data?.discountNodes?.nodes ?? []) {
+        const codes: string[] = (node.discount?.codes?.nodes ?? []).map((c: { code: string }) => c.code.toUpperCase());
+        if (codes.includes(targetCode)) {
+          found.push({ id: node.id, metafieldValue: node.metafield?.value ?? null });
+        }
+      }
+      const pi = data.data?.discountNodes?.pageInfo;
+      cursor = pi?.hasNextPage ? pi.endCursor : null;
+    } while (cursor);
+    return { foundNodes: found };
+  }
+
   if (intent === "delete") {
     // Try to delete from Shopify (may already be gone)
     try {
@@ -398,6 +435,32 @@ export default function SingleCodeDetailsPage() {
           </pre>
         ) : (
           <s-paragraph>No metafield found.</s-paragraph>
+        )}
+        <div style={{ marginTop: "12px" }}>
+          <s-button
+            disabled={isSaving}
+            onClick={() => {
+              const form = new FormData();
+              form.set("intent", "findAllNodes");
+              form.set("code", loaderData.code);
+              fetcher.submit(form, { method: "post" });
+            }}
+          >
+            Find all Shopify nodes for this code
+          </s-button>
+        </div>
+        {(result as { foundNodes?: Array<{ id: string; metafieldValue: string | null }> })?.foundNodes && (
+          <div style={{ marginTop: "8px" }}>
+            {((result as { foundNodes: Array<{ id: string; metafieldValue: string | null }> }).foundNodes).map((n, i) => (
+              <div key={i} style={{ marginBottom: "12px", background: "#f6f6f7", padding: "8px", borderRadius: "4px" }}>
+                <code style={{ fontSize: "11px", wordBreak: "break-all", display: "block", marginBottom: "4px" }}>{n.id}</code>
+                <pre style={{ fontSize: "11px", margin: 0, overflow: "auto" }}>{n.metafieldValue ?? "(no metafield)"}</pre>
+              </div>
+            ))}
+            {((result as { foundNodes: Array<{ id: string; metafieldValue: string | null }> }).foundNodes).length === 0 && (
+              <s-paragraph>No nodes found for this code.</s-paragraph>
+            )}
+          </div>
         )}
       </s-section>
 
