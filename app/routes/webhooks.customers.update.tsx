@@ -7,13 +7,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (!admin || !session) return new Response();
 
-  const customer = payload as { id: number; tags: string };
+  const customer = payload as { id: number; tags: unknown };
   const customerId = `gid://shopify/Customer/${customer.id}`;
 
-  // Parse tags from the webhook payload (comma-separated string)
-  const customerTags = customer.tags
-    ? customer.tags.split(",").map((t: string) => t.trim().toLowerCase()).filter(Boolean)
-    : [];
+  // Log raw tags to see what format Shopify sends
+  console.log(`[customers/update] raw tags type=${typeof customer.tags} value=${JSON.stringify(customer.tags)}`);
+
+  // Parse tags — Shopify may send a comma-separated string OR an array depending on API version
+  let customerTags: string[] = [];
+  if (Array.isArray(customer.tags)) {
+    customerTags = customer.tags.map((t: unknown) => String(t).trim().toLowerCase()).filter(Boolean);
+  } else if (typeof customer.tags === "string" && customer.tags) {
+    customerTags = customer.tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+  }
 
   console.log(`[customers/update] customer=${customerId} tags=[${customerTags.join(", ")}]`);
 
