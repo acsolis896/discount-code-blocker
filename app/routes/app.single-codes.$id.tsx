@@ -174,9 +174,19 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       return { error: `Metafield write failed: ${mfWriteErrors.map((e: { message: string }) => e.message).join(", ")}` };
     }
 
+    // Save base config (without eligibility lists) so syncCustomers can reconstruct full config from DB
+    const baseConfigJson = JSON.stringify({
+      productIds: resolvedProductIds,
+      collectionIds,
+      percentage,
+      blockedProductTypes: existing.blockedProductTypes ?? ["GWP"],
+      requiredTag,
+      blockedTag,
+    });
+
     await db.singleCodeDiscount.updateMany({
       where: { shop: session.shop, discountId },
-      data: { requiredTag, blockedTag },
+      data: { requiredTag, blockedTag, configJson: baseConfigJson },
     });
 
     return { success: true };

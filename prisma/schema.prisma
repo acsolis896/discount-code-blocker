@@ -24,13 +24,16 @@ model BlockedProductType {
 }
 
 model SingleCodeDiscount {
-  id          String   @id @default(cuid())
-  shop        String
-  discountId  String
-  code        String
-  requiredTag String
-  blockedTag  String
-  createdAt   DateTime @default(now())
+  id                  String   @id @default(cuid())
+  shop                String
+  discountId          String
+  code                String
+  requiredTag         String
+  blockedTag          String
+  configJson          String?
+  eligibleCustomerIds String?
+  blockedCustomerIds  String?
+  createdAt           DateTime @default(now())
 
   @@unique([shop, discountId])
   @@index([shop])
