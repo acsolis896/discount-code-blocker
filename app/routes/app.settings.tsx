@@ -42,18 +42,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "sync") {
-    // Fetch current blocked types for this shop
     const rows = await db.blockedProductType.findMany({
       where: { shop: session.shop },
       select: { productType: true },
     });
     const blockedProductTypes = rows.length > 0 ? rows.map((r: { productType: string }) => r.productType) : ["GWP"];
 
-    // Fetch all discount nodes first, then batch-update metafields
+    const dbCodes = await db.singleCodeDiscount.findMany({
+      where: { shop: session.shop },
+      select: { discountId: true, code: true, configJson: true, eligibleCustomerIds: true, blockedCustomerIds: true, functionNodeId: true },
+    });
+
+    // Build a lookup map: discount code → DB record
+    const codeMap = new Map(dbCodes.map((c: { code: string; discountId: string; configJson: string | null; eligibleCustomerIds: string | null; blockedCustomerIds: string | null; functionNodeId: string | null }) => [c.code.toUpperCase(), c]));
+
     let cursor: string | null = null;
     let updated = 0;
     const errors: string[] = [];
-    const allNodes: Array<{ id: string; title: string; metafieldValue: string | null }> = [];
+    const metafields: Array<{ ownerId: string; namespace: string; key: string; type: string; value: string }> = [];
 
     try {
       do {
@@ -64,11 +70,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               nodes {
                 id
                 discount {
-                  ... on DiscountCodeApp { title }
+                  ... on DiscountCodeApp {
+                    codes(first: 1) { nodes { code } }
+                  }
                 }
-                metafield(namespace: "$app", key: "function-configuration") {
-                  value
-                }
+                metafield(namespace: "$app", key: "function-configuration") { value }
               }
               pageInfo { hasNextPage endCursor }
             }
@@ -77,43 +83,41 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         );
         const data = await res.json();
         const nodes = data.data?.discountNodes?.nodes ?? [];
+
         for (const node of nodes) {
-          allNodes.push({
-            id: node.id,
-            title: node.discount?.title ?? node.id,
-            metafieldValue: node.metafield?.value ?? null,
-          });
+          const discountCode = node.discount?.codes?.nodes?.[0]?.code?.toUpperCase() ?? null;
+          const dbRecord = discountCode ? codeMap.get(discountCode) : null;
+
+          if (dbRecord?.configJson) {
+            // Real function node found — store it in DB and write full config
+            let baseConfig: Record<string, unknown> = {};
+            try { baseConfig = JSON.parse(dbRecord.configJson); } catch { /* empty */ }
+            const eligibleCustomerIds = dbRecord.eligibleCustomerIds ? JSON.parse(dbRecord.eligibleCustomerIds) : undefined;
+            const blockedCustomerIds = dbRecord.blockedCustomerIds ? JSON.parse(dbRecord.blockedCustomerIds) : undefined;
+            const fullConfig: Record<string, unknown> = { ...baseConfig, blockedProductTypes };
+            if (eligibleCustomerIds !== undefined) fullConfig.eligibleCustomerIds = eligibleCustomerIds;
+            if (blockedCustomerIds !== undefined) fullConfig.blockedCustomerIds = blockedCustomerIds;
+
+            // Persist the real function node ID so customer sync can write to the right place
+            if (node.id !== dbRecord.functionNodeId) {
+              await db.singleCodeDiscount.updateMany({
+                where: { shop: session.shop, discountId: dbRecord.discountId },
+                data: { functionNodeId: node.id },
+              });
+            }
+
+            metafields.push({ ownerId: node.id, namespace: "$app", key: "function-configuration", type: "json", value: JSON.stringify(fullConfig) });
+          } else {
+            // No DB match — just update blockedProductTypes
+            let config: Record<string, unknown> = {};
+            try { if (node.metafield?.value) config = JSON.parse(node.metafield.value); } catch { /* empty */ }
+            metafields.push({ ownerId: node.id, namespace: "$app", key: "function-configuration", type: "json", value: JSON.stringify({ ...config, blockedProductTypes }) });
+          }
         }
+
         const pageInfo = data.data?.discountNodes?.pageInfo;
         cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
       } while (cursor);
-
-      // Also include the DB-stored discountIds (construction nodes) in case the function
-      // reads from those rather than the scanned nodes.
-      const dbCodes = await db.singleCodeDiscount.findMany({
-        where: { shop: session.shop },
-        select: { discountId: true },
-      });
-      const dbNodeIds = new Set(dbCodes.map((c: { discountId: string }) => c.discountId));
-      const scannedIds = new Set(allNodes.map((n) => n.id));
-
-      // Build a config map from scanned nodes, then add any DB-only IDs with empty config
-      const allTargets: Array<{ id: string; metafieldValue: string | null }> = [
-        ...allNodes,
-        ...[...dbNodeIds].filter((id) => !scannedIds.has(id)).map((id) => ({ id, metafieldValue: null })),
-      ];
-
-      const metafields = allTargets.map((node) => {
-        let config: Record<string, unknown> = {};
-        try { if (node.metafieldValue) config = JSON.parse(node.metafieldValue); } catch { /* empty */ }
-        return {
-          ownerId: node.id,
-          namespace: "$app",
-          key: "function-configuration",
-          type: "json",
-          value: JSON.stringify({ ...config, blockedProductTypes }),
-        };
-      });
 
       for (let i = 0; i < metafields.length; i += 25) {
         const batch = metafields.slice(i, i + 25);
@@ -147,7 +151,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "syncCustomers") {
     const codes = await db.singleCodeDiscount.findMany({
       where: { shop: session.shop },
-      select: { discountId: true, requiredTag: true, blockedTag: true, configJson: true },
+      select: { discountId: true, requiredTag: true, blockedTag: true, configJson: true, functionNodeId: true },
     });
 
     if (codes.length === 0) return { syncedCustomers: 0 };
@@ -228,7 +232,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             userErrors { field message }
           }
         }`,
-        { variables: { metafields: [{ ownerId: code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
+        { variables: { metafields: [{ ownerId: code.functionNodeId ?? code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
       );
       const mfData = await mfRes.json();
       const mfErrors = mfData.data?.metafieldsSet?.userErrors ?? [];

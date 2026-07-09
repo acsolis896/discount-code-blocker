@@ -21,6 +21,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       configJson: true,
       eligibleCustomerIds: true,
       blockedCustomerIds: true,
+      functionNodeId: true,
     },
   });
 
@@ -79,7 +80,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           userErrors { field message }
         }
       }`,
-      { variables: { metafields: [{ ownerId: code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
+      { variables: { metafields: [{ ownerId: code.functionNodeId ?? code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
     );
   }
 
