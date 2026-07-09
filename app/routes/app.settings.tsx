@@ -88,17 +88,40 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           const discountCode = node.discount?.codes?.nodes?.[0]?.code?.toUpperCase() ?? null;
 const dbRecord = discountCode ? codeMap.get(discountCode) : null;
 
-          if (dbRecord?.configJson) {
-            // Real function node found — store it in DB and write full config
+          if (dbRecord) {
             let baseConfig: Record<string, unknown> = {};
-            try { baseConfig = JSON.parse(dbRecord.configJson); } catch { /* empty */ }
+
+            if (dbRecord.configJson) {
+              try { baseConfig = JSON.parse(dbRecord.configJson); } catch { /* empty */ }
+            } else {
+              // configJson not yet saved — read full config from the creation node (discountId)
+              const fallbackRes = await admin.graphql(
+                `#graphql
+                query GetMF($id: ID!) {
+                  discountNode(id: $id) {
+                    metafield(namespace: "$app", key: "function-configuration") { value }
+                  }
+                }`,
+                { variables: { id: dbRecord.discountId } }
+              );
+              const fallbackData = await fallbackRes.json();
+              const fallbackValue = fallbackData.data?.discountNode?.metafield?.value;
+              try { if (fallbackValue) baseConfig = JSON.parse(fallbackValue); } catch { /* empty */ }
+              // Save to DB so future syncs don't need to fetch from Shopify
+              if (Object.keys(baseConfig).length > 0) {
+                await db.singleCodeDiscount.updateMany({
+                  where: { shop: session.shop, discountId: dbRecord.discountId },
+                  data: { configJson: JSON.stringify(baseConfig) },
+                });
+              }
+            }
+
             const eligibleCustomerIds = dbRecord.eligibleCustomerIds ? JSON.parse(dbRecord.eligibleCustomerIds) : undefined;
             const blockedCustomerIds = dbRecord.blockedCustomerIds ? JSON.parse(dbRecord.blockedCustomerIds) : undefined;
             const fullConfig: Record<string, unknown> = { ...baseConfig, blockedProductTypes };
             if (eligibleCustomerIds !== undefined) fullConfig.eligibleCustomerIds = eligibleCustomerIds;
             if (blockedCustomerIds !== undefined) fullConfig.blockedCustomerIds = blockedCustomerIds;
 
-            // Persist the real function node ID so customer sync can write to the right place
             if (node.id !== dbRecord.functionNodeId) {
               await db.singleCodeDiscount.updateMany({
                 where: { shop: session.shop, discountId: dbRecord.discountId },
