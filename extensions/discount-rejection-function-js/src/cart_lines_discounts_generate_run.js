@@ -8,7 +8,7 @@
  * @returns {CartLinesDiscountsGenerateRunResult}
  */
 export function cartLinesDiscountsGenerateRun(input) {
-  const metafieldValue = input.discount?.metafield?.value;
+  const metafieldValue = input.discount?.productConfig?.value;
   if (!metafieldValue) return { operations: [] };
 
   let config;
@@ -18,7 +18,7 @@ export function cartLinesDiscountsGenerateRun(input) {
     return { operations: [] };
   }
 
-  const { productIds, percentage, blockedProductTypes, requiredTag, blockedTag } = config;
+  const { productIds, percentage, blockedProductTypes } = config;
 
   const rejectableCodes = (input.enteredDiscountCodes ?? [])
     .filter((c) => c.rejectable)
@@ -42,21 +42,26 @@ export function cartLinesDiscountsGenerateRun(input) {
     return reject("This discount code can't be used when a gift item is in your cart.");
   }
 
-  // 2. Eligibility check via synced customer ID lists (populated by the app's sync button)
-  const eligibleCustomerIds = config.eligibleCustomerIds;
-  if (Array.isArray(eligibleCustomerIds)) {
-    const customer = input.cart.buyerIdentity?.customer;
-    if (!customer) {
-      return reject("Please log in to your account to use this discount code.");
-    }
-    if (!eligibleCustomerIds.includes(customer.id)) {
-      return reject("This discount code is not available for your account.");
-    }
+  // 2. Customer eligibility — read from separate metafield so it never corrupts product config
+  const eligibilityValue = input.discount?.customerEligibility?.value;
+  if (eligibilityValue) {
+    let eligibilityConfig;
+    try { eligibilityConfig = JSON.parse(eligibilityValue); } catch { eligibilityConfig = {}; }
 
-    // Blocked customers (usage limit reached)
-    const blockedCustomerIds = config.blockedCustomerIds ?? [];
-    if (blockedCustomerIds.includes(customer.id)) {
-      return reject("You've reached your usage limit for this discount code.");
+    const eligibleCustomerIds = eligibilityConfig.eligibleCustomerIds;
+    if (Array.isArray(eligibleCustomerIds)) {
+      const customer = input.cart.buyerIdentity?.customer;
+      if (!customer) {
+        return reject("Please log in to your account to use this discount code.");
+      }
+      if (!eligibleCustomerIds.includes(customer.id)) {
+        return reject("This discount code is not available for your account.");
+      }
+
+      const blockedCustomerIds = eligibilityConfig.blockedCustomerIds ?? [];
+      if (blockedCustomerIds.includes(customer.id)) {
+        return reject("You've reached your usage limit for this discount code.");
+      }
     }
   }
 

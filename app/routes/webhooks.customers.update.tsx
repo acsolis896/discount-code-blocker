@@ -18,18 +18,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       discountId: true,
       requiredTag: true,
       blockedTag: true,
-      configJson: true,
       eligibleCustomerIds: true,
       blockedCustomerIds: true,
     },
   });
 
   for (const code of codes) {
-    if (!code.configJson) continue;
-
-    let baseConfig: Record<string, unknown>;
-    try { baseConfig = JSON.parse(code.configJson); } catch { continue; }
-
     const eligible: string[] = code.eligibleCustomerIds ? JSON.parse(code.eligibleCustomerIds) : [];
     const blocked: string[] = code.blockedCustomerIds ? JSON.parse(code.blockedCustomerIds) : [];
 
@@ -62,7 +56,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!changed) continue;
 
-    const fullConfig = JSON.stringify({ ...baseConfig, eligibleCustomerIds: eligible, blockedCustomerIds: blocked });
+    const eligibilityJson = JSON.stringify({ eligibleCustomerIds: eligible, blockedCustomerIds: blocked });
 
     // Update DB
     await db.singleCodeDiscount.update({
@@ -73,7 +67,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       },
     });
 
-    // Write to Shopify metafield so the function sees the updated lists immediately
+    // Write ONLY to customer-eligibility key — never touch function-configuration
     await admin.graphql(
       `#graphql
       mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
@@ -81,7 +75,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           userErrors { field message }
         }
       }`,
-      { variables: { metafields: [{ ownerId: code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
+      { variables: { metafields: [{ ownerId: code.discountId, namespace: "$app", key: "customer-eligibility", type: "json", value: eligibilityJson }] } }
     );
   }
 
