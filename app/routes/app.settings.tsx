@@ -86,6 +86,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
         for (const node of nodes) {
           const discountCode = node.discount?.codes?.nodes?.[0]?.code?.toUpperCase() ?? null;
+          console.log(`[sync] node ${node.id} → code: ${discountCode}, discount type keys: ${JSON.stringify(Object.keys(node.discount ?? {}))}`);
           const dbRecord = discountCode ? codeMap.get(discountCode) : null;
 
           if (dbRecord?.configJson) {
