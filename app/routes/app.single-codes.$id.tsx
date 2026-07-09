@@ -153,7 +153,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       blockedTag,
     };
 
-    await admin.graphql(
+    const mfWriteRes = await admin.graphql(
       `#graphql
       mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
         metafieldsSet(metafields: $metafields) {
@@ -172,6 +172,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         },
       }
     );
+    const mfWriteData = await mfWriteRes.json();
+    const mfWriteErrors = mfWriteData.data?.metafieldsSet?.userErrors ?? [];
+    if (mfWriteErrors.length > 0) {
+      return { error: `Metafield write failed: ${mfWriteErrors.map((e: { message: string }) => e.message).join(", ")}` };
+    }
 
     await db.singleCodeDiscount.updateMany({
       where: { shop: session.shop, discountId },
@@ -380,6 +385,19 @@ export default function SingleCodeDetailsPage() {
               onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
             />
           </>
+        )}
+      </s-section>
+
+      <s-section heading="Debug">
+        <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Discount ID</div>
+        <code style={{ fontSize: "11px", wordBreak: "break-all" }}>{loaderData.discountId}</code>
+        <div style={{ fontSize: "12px", color: "#6d7175", marginTop: "12px", marginBottom: "4px" }}>Raw metafield</div>
+        {loaderData.metafieldRaw ? (
+          <pre style={{ fontSize: "11px", background: "#f6f6f7", padding: "8px", borderRadius: "4px", overflow: "auto", maxHeight: "300px" }}>
+            {JSON.stringify(JSON.parse(loaderData.metafieldRaw), null, 2)}
+          </pre>
+        ) : (
+          <s-paragraph>No metafield found.</s-paragraph>
         )}
       </s-section>
 
