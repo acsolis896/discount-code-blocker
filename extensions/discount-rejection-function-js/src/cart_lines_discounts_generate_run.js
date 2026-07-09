@@ -8,7 +8,7 @@
  * @returns {CartLinesDiscountsGenerateRunResult}
  */
 export function cartLinesDiscountsGenerateRun(input) {
-  const metafieldValue = input.discount?.productConfig?.value;
+  const metafieldValue = input.discount?.metafield?.value;
   if (!metafieldValue) return { operations: [] };
 
   let config;
@@ -42,26 +42,20 @@ export function cartLinesDiscountsGenerateRun(input) {
     return reject("This discount code can't be used when a gift item is in your cart.");
   }
 
-  // 2. Customer eligibility — read from separate metafield so it never corrupts product config
-  const eligibilityValue = input.discount?.customerEligibility?.value;
-  if (eligibilityValue) {
-    let eligibilityConfig;
-    try { eligibilityConfig = JSON.parse(eligibilityValue); } catch { eligibilityConfig = {}; }
+  // 2. Customer eligibility
+  const eligibleCustomerIds = config.eligibleCustomerIds;
+  if (Array.isArray(eligibleCustomerIds) && eligibleCustomerIds.length > 0) {
+    const customer = input.cart.buyerIdentity?.customer;
+    if (!customer) {
+      return reject("Please log in to your account to use this discount code.");
+    }
+    if (!eligibleCustomerIds.includes(customer.id)) {
+      return reject("This discount code is not available for your account.");
+    }
 
-    const eligibleCustomerIds = eligibilityConfig.eligibleCustomerIds;
-    if (Array.isArray(eligibleCustomerIds) && eligibleCustomerIds.length > 0) {
-      const customer = input.cart.buyerIdentity?.customer;
-      if (!customer) {
-        return reject("Please log in to your account to use this discount code.");
-      }
-      if (!eligibleCustomerIds.includes(customer.id)) {
-        return reject("This discount code is not available for your account.");
-      }
-
-      const blockedCustomerIds = eligibilityConfig.blockedCustomerIds ?? [];
-      if (blockedCustomerIds.includes(customer.id)) {
-        return reject("You've reached your usage limit for this discount code.");
-      }
+    const blockedCustomerIds = config.blockedCustomerIds ?? [];
+    if (blockedCustomerIds.includes(customer.id)) {
+      return reject("You've reached your usage limit for this discount code.");
     }
   }
 

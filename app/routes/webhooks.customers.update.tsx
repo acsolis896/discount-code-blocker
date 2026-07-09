@@ -18,16 +18,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       discountId: true,
       requiredTag: true,
       blockedTag: true,
+      configJson: true,
       eligibleCustomerIds: true,
       blockedCustomerIds: true,
     },
   });
 
   for (const code of codes) {
+    if (!code.configJson) continue;
+
     const eligible: string[] = code.eligibleCustomerIds ? JSON.parse(code.eligibleCustomerIds) : [];
     const blocked: string[] = code.blockedCustomerIds ? JSON.parse(code.blockedCustomerIds) : [];
 
-    // Skip discounts that have no eligibility lists (customer sync never run)
+    // Skip if sync has never run (no eligible list populated yet)
     if (eligible.length === 0 && blocked.length === 0) continue;
 
     const hasRequiredTag = code.requiredTag ? customerTags.includes(code.requiredTag) : false;
@@ -56,9 +59,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!changed) continue;
 
-    const eligibilityJson = JSON.stringify({ eligibleCustomerIds: eligible, blockedCustomerIds: blocked });
+    let baseConfig: Record<string, unknown>;
+    try { baseConfig = JSON.parse(code.configJson); } catch { continue; }
 
-    // Update DB
+    const fullConfig = JSON.stringify({ ...baseConfig, eligibleCustomerIds: eligible, blockedCustomerIds: blocked });
+
     await db.singleCodeDiscount.update({
       where: { shop_discountId: { shop, discountId: code.discountId } },
       data: {
@@ -67,7 +72,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       },
     });
 
-    // Write ONLY to customer-eligibility key — never touch function-configuration
     await admin.graphql(
       `#graphql
       mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
@@ -75,7 +79,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           userErrors { field message }
         }
       }`,
-      { variables: { metafields: [{ ownerId: code.discountId, namespace: "$app", key: "customer-eligibility", type: "json", value: eligibilityJson }] } }
+      { variables: { metafields: [{ ownerId: code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
     );
   }
 

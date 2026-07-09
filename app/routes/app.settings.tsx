@@ -209,7 +209,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         } while (cursor);
       }
 
-      const eligibilityJson = JSON.stringify({ eligibleCustomerIds, blockedCustomerIds });
+      // Always reconstruct full config from DB — never read from Shopify
+      const fullConfig = JSON.stringify({ ...baseConfig, eligibleCustomerIds, blockedCustomerIds });
 
       // Update DB with latest customer lists
       await db.singleCodeDiscount.update({
@@ -220,7 +221,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       });
 
-      // Write ONLY to the customer-eligibility metafield — never touch function-configuration
       const mfRes = await admin.graphql(
         `#graphql
         mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
@@ -228,7 +228,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             userErrors { field message }
           }
         }`,
-        { variables: { metafields: [{ ownerId: code.discountId, namespace: "$app", key: "customer-eligibility", type: "json", value: eligibilityJson }] } }
+        { variables: { metafields: [{ ownerId: code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
       );
       const mfData = await mfRes.json();
       const mfErrors = mfData.data?.metafieldsSet?.userErrors ?? [];

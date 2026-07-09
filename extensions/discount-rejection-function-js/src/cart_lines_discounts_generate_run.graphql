@@ -28,10 +28,7 @@ query CartLinesDiscountsGenerateRunInput {
     rejectable
   }
   discount {
-    productConfig: metafield(namespace: "$app", key: "function-configuration") {
-      value
-    }
-    customerEligibility: metafield(namespace: "$app", key: "customer-eligibility") {
+    metafield(namespace: "$app", key: "function-configuration") {
       value
     }
   }
