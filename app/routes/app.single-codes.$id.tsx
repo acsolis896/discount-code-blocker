@@ -153,7 +153,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       blockedTag,
     };
 
-    const appDiscountId = discountId.replace("DiscountCodeNode", "DiscountCodeApp");
     const mfWriteRes = await admin.graphql(
       `#graphql
       mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
@@ -165,7 +164,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         variables: {
           metafields: [
             { ownerId: discountId, namespace: "$app", key: "function-configuration", type: "json", value: JSON.stringify(newConfig) },
-            { ownerId: appDiscountId, namespace: "$app", key: "function-configuration", type: "json", value: JSON.stringify(newConfig) },
           ],
         },
       }
@@ -185,15 +183,16 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   if (intent === "findAllNodes") {
-    // Scan all function nodes and return every one with this code in it
+    // Scan ALL discount nodes (no filter) to find every node with this code,
+    // including any from other functions or deleted discounts still in Shopify.
     const targetCode = String(formData.get("code") || "").toUpperCase();
     const found: Array<{ id: string; metafieldValue: string | null }> = [];
     let cursor: string | null = null;
     do {
       const res = await admin.graphql(
         `#graphql
-        query ScanNodes($after: String) {
-          discountNodes(first: 50, after: $after, query: "function_id:discount-rejection-function-js") {
+        query ScanAllNodes($after: String) {
+          discountNodes(first: 50, after: $after) {
             nodes {
               id
               discount {
