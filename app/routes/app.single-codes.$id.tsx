@@ -41,7 +41,25 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const data = await res.json();
   const node = data.data?.discountNode;
   const discount = node?.discount;
-  const metafieldValue = node?.metafield?.value;
+
+  // Read the metafield from the real function node if different from construction node
+  const functionNodeId = row.functionNodeId;
+  let metafieldValue = node?.metafield?.value;
+  if (functionNodeId && functionNodeId !== discountId) {
+    const fnRes = await admin.graphql(
+      `#graphql
+      query GetFunctionNodeMF($id: ID!) {
+        discountNode(id: $id) {
+          metafield(namespace: "$app", key: "function-configuration") { value }
+        }
+      }`,
+      { variables: { id: functionNodeId } }
+    );
+    const fnData = await fnRes.json();
+    const fnValue = fnData.data?.discountNode?.metafield?.value;
+    if (fnValue) metafieldValue = fnValue;
+  }
+
   let config: Record<string, unknown> = {};
   try { config = JSON.parse(metafieldValue); } catch {}
 
@@ -130,7 +148,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       }
     }
 
-    // Fetch existing metafield to preserve blockedProductTypes
+    // Look up functionNodeId from DB
+    const dbRow = await db.singleCodeDiscount.findFirst({ where: { shop: session.shop, discountId }, select: { functionNodeId: true, eligibleCustomerIds: true, blockedCustomerIds: true } });
+    const fnNodeId = dbRow?.functionNodeId ?? null;
+    const readFromId = fnNodeId ?? discountId;
+
+    // Fetch existing metafield to preserve eligibility lists and blockedProductTypes
     const mfRes = await admin.graphql(
       `#graphql
       query GetMF($id: ID!) {
@@ -138,7 +161,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
           metafield(namespace: "$app", key: "function-configuration") { value }
         }
       }`,
-      { variables: { id: discountId } }
+      { variables: { id: readFromId } }
     );
     const mfData = await mfRes.json();
     let existing: Record<string, unknown> = {};
@@ -153,25 +176,30 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       blockedTag,
     };
 
-    const mfWriteRes = await admin.graphql(
-      `#graphql
-      mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
-        metafieldsSet(metafields: $metafields) {
-          userErrors { field message }
+    // Write to both construction node and real function node (if different)
+    const writeTargets = [discountId];
+    if (fnNodeId && fnNodeId !== discountId) writeTargets.push(fnNodeId);
+    for (const ownerId of writeTargets) {
+      const mfWriteRes = await admin.graphql(
+        `#graphql
+        mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
+          metafieldsSet(metafields: $metafields) {
+            userErrors { field message }
+          }
+        }`,
+        {
+          variables: {
+            metafields: [
+              { ownerId, namespace: "$app", key: "function-configuration", type: "json", value: JSON.stringify(newConfig) },
+            ],
+          },
         }
-      }`,
-      {
-        variables: {
-          metafields: [
-            { ownerId: discountId, namespace: "$app", key: "function-configuration", type: "json", value: JSON.stringify(newConfig) },
-          ],
-        },
+      );
+      const mfWriteData = await mfWriteRes.json();
+      const mfWriteErrors = mfWriteData.data?.metafieldsSet?.userErrors ?? [];
+      if (mfWriteErrors.length > 0) {
+        return { error: `Metafield write failed: ${mfWriteErrors.map((e: { message: string }) => e.message).join(", ")}` };
       }
-    );
-    const mfWriteData = await mfWriteRes.json();
-    const mfWriteErrors = mfWriteData.data?.metafieldsSet?.userErrors ?? [];
-    if (mfWriteErrors.length > 0) {
-      return { error: `Metafield write failed: ${mfWriteErrors.map((e: { message: string }) => e.message).join(", ")}` };
     }
 
     // Save base config (without eligibility lists) so syncCustomers can reconstruct full config from DB
