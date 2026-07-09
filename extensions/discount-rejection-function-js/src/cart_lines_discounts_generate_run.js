@@ -49,7 +49,7 @@ export function cartLinesDiscountsGenerateRun(input) {
     try { eligibilityConfig = JSON.parse(eligibilityValue); } catch { eligibilityConfig = {}; }
 
     const eligibleCustomerIds = eligibilityConfig.eligibleCustomerIds;
-    if (Array.isArray(eligibleCustomerIds)) {
+    if (Array.isArray(eligibleCustomerIds) && eligibleCustomerIds.length > 0) {
       const customer = input.cart.buyerIdentity?.customer;
       if (!customer) {
         return reject("Please log in to your account to use this discount code.");
