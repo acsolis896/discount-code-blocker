@@ -15,11 +15,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     ? customer.tags.split(",").map((t: string) => t.trim().toLowerCase()).filter(Boolean)
     : [];
 
+  console.log(`[customers/update] customer=${customerId} tags=[${customerTags.join(", ")}]`);
+
   // Get all single codes for this shop
   const singleCodes = await db.singleCodeDiscount.findMany({
     where: { shop: session.shop },
     select: { discountId: true, requiredTag: true, blockedTag: true },
   });
+
+  console.log(`[customers/update] found ${singleCodes.length} single codes for shop ${session.shop}`);
 
   for (const code of singleCodes) {
     // Fetch the current metafield
@@ -43,6 +47,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       ? (config.blockedCustomerIds as string[])
       : [];
 
+    console.log(`[customers/update] discount=${code.discountId} requiredTag=${code.requiredTag} blockedTag=${code.blockedTag} eligibleCount=${eligibleIds.length} blockedCount=${blockedIds.length} customerInBlocked=${blockedIds.includes(customerId)}`);
+
     let changed = false;
 
     // Update eligible list based on required tag
@@ -51,29 +57,37 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       if (hasTag && !eligibleIds.includes(customerId)) {
         eligibleIds = [...eligibleIds, customerId];
         changed = true;
+        console.log(`[customers/update] adding customer to eligibleIds`);
       } else if (!hasTag && eligibleIds.includes(customerId)) {
         eligibleIds = eligibleIds.filter((id) => id !== customerId);
         changed = true;
+        console.log(`[customers/update] removing customer from eligibleIds`);
       }
     }
 
     // Update blocked list based on blocked tag
     if (code.blockedTag) {
       const hasTag = customerTags.includes(code.blockedTag.toLowerCase());
+      console.log(`[customers/update] blockedTag check: hasTag=${hasTag} inList=${blockedIds.includes(customerId)}`);
       if (hasTag && !blockedIds.includes(customerId)) {
         blockedIds = [...blockedIds, customerId];
         changed = true;
+        console.log(`[customers/update] adding customer to blockedIds`);
       } else if (!hasTag && blockedIds.includes(customerId)) {
         blockedIds = blockedIds.filter((id) => id !== customerId);
         changed = true;
+        console.log(`[customers/update] removing customer from blockedIds`);
       }
     }
 
-    if (!changed) continue;
+    if (!changed) {
+      console.log(`[customers/update] no changes needed for this discount`);
+      continue;
+    }
 
     const newConfig = { ...config, eligibleCustomerIds: eligibleIds, blockedCustomerIds: blockedIds };
 
-    await admin.graphql(
+    const updateRes = await admin.graphql(
       `#graphql
       mutation UpdateDiscountMF($metafields: [MetafieldsSetInput!]!) {
         metafieldsSet(metafields: $metafields) {
@@ -92,6 +106,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       }
     );
+    const updateData = await updateRes.json();
+    const userErrors = updateData.data?.metafieldsSet?.userErrors ?? [];
+    console.log(`[customers/update] metafieldsSet userErrors=${JSON.stringify(userErrors)}`);
   }
 
   return new Response();
