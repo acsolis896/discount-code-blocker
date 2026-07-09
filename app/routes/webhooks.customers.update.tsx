@@ -7,19 +7,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (!admin || !session) return new Response();
 
-  const customer = payload as { id: number; tags: unknown };
+  const customer = payload as { id: number };
   const customerId = `gid://shopify/Customer/${customer.id}`;
 
-  // Log raw tags to see what format Shopify sends
-  console.log(`[customers/update] raw tags type=${typeof customer.tags} value=${JSON.stringify(customer.tags)}`);
-
-  // Parse tags — Shopify may send a comma-separated string OR an array depending on API version
-  let customerTags: string[] = [];
-  if (Array.isArray(customer.tags)) {
-    customerTags = customer.tags.map((t: unknown) => String(t).trim().toLowerCase()).filter(Boolean);
-  } else if (typeof customer.tags === "string" && customer.tags) {
-    customerTags = customer.tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
-  }
+  // Tags are not included in the 2026-04 webhook payload — fetch them via Admin API
+  const customerRes = await admin.graphql(
+    `#graphql
+    query GetCustomerTags($id: ID!) {
+      customer(id: $id) { tags }
+    }`,
+    { variables: { id: customerId } }
+  );
+  const customerData = await customerRes.json();
+  const customerTags: string[] = (customerData.data?.customer?.tags ?? []).map(
+    (t: string) => t.trim().toLowerCase()
+  );
 
   console.log(`[customers/update] customer=${customerId} tags=[${customerTags.join(", ")}]`);
 
