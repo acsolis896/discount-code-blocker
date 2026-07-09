@@ -77,6 +77,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     const newConfig = { ...config, eligibleCustomerIds: eligibleIds, blockedCustomerIds: blockedIds };
 
+    // Also write to the constructed DiscountCodeNode (same numeric ID as DiscountCodeApp)
+    // in case the function reads from that node rather than the scanned node stored in DB.
+    const numericId = code.discountId.split("/").pop();
+    const constructedId = `gid://shopify/DiscountCodeNode/${numericId}`;
+    const targetIds = constructedId !== code.discountId
+      ? [code.discountId, constructedId]
+      : [code.discountId];
+
     await admin.graphql(
       `#graphql
       mutation UpdateDiscountMF($metafields: [MetafieldsSetInput!]!) {
@@ -86,13 +94,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }`,
       {
         variables: {
-          metafields: [{
-            ownerId: code.discountId,
+          metafields: targetIds.map((ownerId) => ({
+            ownerId,
             namespace: "$app",
             key: "function-configuration",
             type: "json",
             value: JSON.stringify(newConfig),
-          }],
+          })),
         },
       }
     );
