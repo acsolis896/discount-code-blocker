@@ -42,19 +42,12 @@ export function cartLinesDiscountsGenerateRun(input) {
     return reject("This discount code can't be used when a gift item is in your cart.");
   }
 
-  // 2. Customer eligibility
-  const eligibleCustomerIds = config.eligibleCustomerIds;
-  if (Array.isArray(eligibleCustomerIds) && eligibleCustomerIds.length > 0) {
+  // 2. Block customers who've hit their usage limit
+  // (requiredTag whitelist is enforced natively by Shopify via discount customerSelection)
+  const blockedCustomerIds = config.blockedCustomerIds ?? [];
+  if (blockedCustomerIds.length > 0) {
     const customer = input.cart.buyerIdentity?.customer;
-    if (!customer) {
-      return reject("Please log in to your account to use this discount code.");
-    }
-    if (!eligibleCustomerIds.includes(customer.id)) {
-      return reject("This discount code is not available for your account.");
-    }
-
-    const blockedCustomerIds = config.blockedCustomerIds ?? [];
-    if (blockedCustomerIds.includes(customer.id)) {
+    if (customer && blockedCustomerIds.includes(customer.id)) {
       return reject("You've reached your usage limit for this discount code.");
     }
   }

@@ -63,8 +63,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let baseConfig: Record<string, unknown>;
     try { baseConfig = JSON.parse(code.configJson); } catch { continue; }
 
-    const fullConfig = JSON.stringify({ ...baseConfig, eligibleCustomerIds: eligible, blockedCustomerIds: blocked });
-
     await db.singleCodeDiscount.update({
       where: { shop_discountId: { shop, discountId: code.discountId } },
       data: {
@@ -73,6 +71,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       },
     });
 
+    // Update native Shopify customer selection for the eligible list (reliable — uses DiscountCodeApp GID)
+    if (code.requiredTag) {
+      const appId = code.discountId.replace("DiscountCodeNode", "DiscountCodeApp");
+      const action = hasRequiredTag
+        ? { customers: { add: [customerId], remove: [] as string[] } }
+        : { customers: { remove: [customerId], add: [] as string[] } };
+      await admin.graphql(
+        `#graphql
+        mutation UpdateCustomerSelection($id: ID!, $input: DiscountCodeAppInput!) {
+          discountCodeAppUpdate(id: $id, codeAppDiscount: $input) {
+            userErrors { field message }
+          }
+        }`,
+        { variables: { id: appId, input: { customerSelection: { all: false, ...action } } } }
+      );
+    }
+
+    // Update blockedCustomerIds in function metafield
+    const metafieldConfig = JSON.stringify({ ...baseConfig, blockedCustomerIds: blocked });
     await admin.graphql(
       `#graphql
       mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
@@ -80,7 +97,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           userErrors { field message }
         }
       }`,
-      { variables: { metafields: [{ ownerId: code.functionNodeId ?? code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: fullConfig }] } }
+      { variables: { metafields: [{ ownerId: code.functionNodeId ?? code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: metafieldConfig }] } }
     );
   }
 
