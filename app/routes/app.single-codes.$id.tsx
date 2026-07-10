@@ -99,7 +99,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     collectionIds,
     collectionTitles,
     blockedProductTypes: (config.blockedProductTypes as string[]) ?? [],
-    metafieldRaw: metafieldValue ?? null,
   };
 };
 
@@ -218,44 +217,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     });
 
     return { success: true };
-  }
-
-  if (intent === "findAllNodes") {
-    // Scan ALL discount nodes (no filter) to find every node with this code,
-    // including any from other functions or deleted discounts still in Shopify.
-    const targetCode = String(formData.get("code") || "").toUpperCase();
-    const found: Array<{ id: string; metafieldValue: string | null }> = [];
-    let cursor: string | null = null;
-    do {
-      const res = await admin.graphql(
-        `#graphql
-        query ScanAllNodes($after: String) {
-          discountNodes(first: 50, after: $after) {
-            nodes {
-              id
-              discount {
-                ... on DiscountCodeApp {
-                  codes(first: 10) { nodes { code } }
-                }
-              }
-              metafield(namespace: "$app", key: "function-configuration") { value }
-            }
-            pageInfo { hasNextPage endCursor }
-          }
-        }`,
-        { variables: { after: cursor } }
-      );
-      const data = await res.json();
-      for (const node of data.data?.discountNodes?.nodes ?? []) {
-        const codes: string[] = (node.discount?.codes?.nodes ?? []).map((c: { code: string }) => c.code.toUpperCase());
-        if (codes.includes(targetCode)) {
-          found.push({ id: node.id, metafieldValue: node.metafield?.value ?? null });
-        }
-      }
-      const pi = data.data?.discountNodes?.pageInfo;
-      cursor = pi?.hasNextPage ? pi.endCursor : null;
-    } while (cursor);
-    return { foundNodes: found };
   }
 
   if (intent === "delete") {
@@ -460,81 +421,6 @@ export default function SingleCodeDetailsPage() {
         )}
       </s-section>
 
-      <s-section heading="Debug">
-        <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Discount ID</div>
-        <code style={{ fontSize: "11px", wordBreak: "break-all" }}>{loaderData.discountId}</code>
-        <div style={{ fontSize: "12px", color: "#6d7175", marginTop: "12px", marginBottom: "4px" }}>Raw metafield</div>
-        {loaderData.metafieldRaw ? (
-          <pre style={{ fontSize: "11px", background: "#f6f6f7", padding: "8px", borderRadius: "4px", overflow: "auto", maxHeight: "300px" }}>
-            {JSON.stringify(JSON.parse(loaderData.metafieldRaw), null, 2)}
-          </pre>
-        ) : (
-          <s-paragraph>No metafield found.</s-paragraph>
-        )}
-        <div style={{ marginTop: "12px" }}>
-          <s-button
-            disabled={isSaving}
-            onClick={() => {
-              const form = new FormData();
-              form.set("intent", "findAllNodes");
-              form.set("code", loaderData.code);
-              fetcher.submit(form, { method: "post" });
-            }}
-          >
-            Find all Shopify nodes for this code
-          </s-button>
-        </div>
-        {(result as { foundNodes?: Array<{ id: string; metafieldValue: string | null }> })?.foundNodes && (
-          <div style={{ marginTop: "8px" }}>
-            {((result as { foundNodes: Array<{ id: string; metafieldValue: string | null }> }).foundNodes).map((n, i) => (
-              <div key={i} style={{ marginBottom: "12px", background: "#f6f6f7", padding: "8px", borderRadius: "4px" }}>
-                <code style={{ fontSize: "11px", wordBreak: "break-all", display: "block", marginBottom: "4px" }}>{n.id}</code>
-                <pre style={{ fontSize: "11px", margin: 0, overflow: "auto" }}>{n.metafieldValue ?? "(no metafield)"}</pre>
-              </div>
-            ))}
-            {((result as { foundNodes: Array<{ id: string; metafieldValue: string | null }> }).foundNodes).length === 0 && (
-              <s-paragraph>No nodes found for this code.</s-paragraph>
-            )}
-          </div>
-        )}
-      </s-section>
-
-      <s-section heading="Eligible customers">
-        {(() => {
-          if (!loaderData.metafieldRaw) {
-            return (
-              <s-banner tone="critical">
-                <s-paragraph>Metafield is missing — delete and recreate this single code, then run Sync customer tags in Settings.</s-paragraph>
-              </s-banner>
-            );
-          }
-          let cfg: Record<string, unknown> = {};
-          try { cfg = JSON.parse(loaderData.metafieldRaw); } catch {}
-          const eligible = Array.isArray(cfg.eligibleCustomerIds) ? (cfg.eligibleCustomerIds as unknown[]).length : null;
-          const blockedCount = Array.isArray(cfg.blockedCustomerIds) ? (cfg.blockedCustomerIds as unknown[]).length : null;
-          if (eligible === null) {
-            return (
-              <s-banner tone="warning">
-                <s-paragraph>No eligible customers synced yet. Go to Settings → Sync customer tags after adding the required tag to customers in Shopify admin.</s-paragraph>
-              </s-banner>
-            );
-          }
-          return (
-            <div style={{ display: "flex", gap: "24px" }}>
-              <div>
-                <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Eligible</div>
-                <span style={{ fontSize: "16px", fontWeight: 500 }}>{eligible} customer{eligible !== 1 ? "s" : ""}</span>
-              </div>
-              {blockedCount !== null && (
-                <div>
-                  <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Blocked (limit reached)</div>
-                  <span style={{ fontSize: "16px", fontWeight: 500 }}>{blockedCount} customer{blockedCount !== 1 ? "s" : ""}</span>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-      </s-section>
 
       <div style={{ display: "flex", gap: "8px", marginTop: "16px", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: "8px" }}>
