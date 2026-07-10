@@ -235,29 +235,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       let baseConfig: Record<string, unknown>;
       try { baseConfig = JSON.parse(code.configJson); } catch { errors.push(`Bad configJson for ${code.discountId}`); continue; }
 
-      // Fetch customers with requiredTag (for native Shopify customer selection)
-      const eligibleCustomerIds: string[] = [];
-      if (code.requiredTag) {
-        let cursor: string | null = null;
-        do {
-          const res = await admin.graphql(
-            `#graphql
-            query CustomersWithTag($query: String!, $after: String) {
-              customers(first: 250, query: $query, after: $after) {
-                nodes { id }
-                pageInfo { hasNextPage endCursor }
-              }
-            }`,
-            { variables: { query: `tag:'${code.requiredTag}'`, after: cursor } }
-          );
-          const data = await res.json();
-          const customers = data.data?.customers;
-          for (const c of customers?.nodes ?? []) eligibleCustomerIds.push(c.id);
-          cursor = customers?.pageInfo?.hasNextPage ? customers.pageInfo.endCursor : null;
-        } while (cursor);
-      }
-
-      // Fetch customers with blockedTag (stored in function metafield)
+      // Fetch customers with blockedTag for metafield backup
       const blockedCustomerIds: string[] = [];
       if (code.blockedTag) {
         let cursor: string | null = null;
@@ -279,74 +257,90 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         } while (cursor);
       }
 
-      // --- ELIGIBLE LIST: use Shopify's native customer selection on the discount ---
-      // Shopify limits add/remove to 10 IDs per call, so we batch.
+      // --- ELIGIBLE + BLOCKED: use a customer segment on the discount ---
+      // Segments are dynamic (no size limit, auto-update when tags change).
+      // Segment query: has requiredTag AND does not have blockedTag.
       if (code.requiredTag) {
-        const oldEligible: string[] = code.eligibleCustomerIds ? JSON.parse(code.eligibleCustomerIds) : [];
         const appId = code.discountId.replace("DiscountCodeNode", "DiscountCodeApp");
-        const BATCH = 10;
-        let selectionError = false;
+        const segmentName = `${code.code} Eligible`;
+        const segmentQuery = code.blockedTag
+          ? `customer_tags CONTAINS '${code.requiredTag}' AND customer_tags NOT CONTAINS '${code.blockedTag}'`
+          : `customer_tags CONTAINS '${code.requiredTag}'`;
 
-        // Step 1: reset to all customers (clears existing specific selection)
-        const resetRes = await admin.graphql(
+        // Find or create the segment
+        let segmentId: string | null = null;
+        const findRes = await admin.graphql(
           `#graphql
-          mutation UpdateCustomerSelection($id: ID!, $input: DiscountCodeAppInput!) {
-            discountCodeAppUpdate(id: $id, codeAppDiscount: $input) {
-              userErrors { field message }
+          query FindSegment($query: String!) {
+            segments(first: 1, query: $query) {
+              nodes { id name }
             }
           }`,
-          { variables: { id: appId, input: { customerSelection: { all: true } } } }
+          { variables: { query: `name:'${segmentName}'` } }
         );
-        const resetData = await resetRes.json();
-        const resetErrors = resetData.data?.discountCodeAppUpdate?.userErrors ?? [];
-        if (resetErrors.length > 0) {
-          errors.push(`Customer selection reset for ${code.code}: ${resetErrors.map((e: { message: string }) => e.message).join(", ")}`);
-          selectionError = true;
+        const findData = await findRes.json();
+        const existingSegment = findData.data?.segments?.nodes?.[0];
+        if (existingSegment) {
+          segmentId = existingSegment.id;
+          // Update query in case tags changed
+          await admin.graphql(
+            `#graphql
+            mutation UpdateSegment($id: ID!, $name: String!, $query: String!) {
+              segmentUpdate(id: $id, name: $name, query: $query) {
+                userErrors { field message }
+              }
+            }`,
+            { variables: { id: segmentId, name: segmentName, query: segmentQuery } }
+          );
+        } else {
+          const createRes = await admin.graphql(
+            `#graphql
+            mutation CreateSegment($name: String!, $query: String!) {
+              segmentCreate(name: $name, query: $query) {
+                segment { id }
+                userErrors { field message }
+              }
+            }`,
+            { variables: { name: segmentName, query: segmentQuery } }
+          );
+          const createData = await createRes.json();
+          const createErrors = createData.data?.segmentCreate?.userErrors ?? [];
+          if (createErrors.length > 0) {
+            errors.push(`Segment create for ${code.code}: ${createErrors.map((e: { message: string }) => e.message).join(", ")}`);
+          } else {
+            segmentId = createData.data?.segmentCreate?.segment?.id ?? null;
+          }
         }
 
-        // Step 2: set to specific customers in batches of 10
-        if (!selectionError && eligibleCustomerIds.length > 0) {
-          for (let i = 0; i < eligibleCustomerIds.length; i += BATCH) {
-            const batch = eligibleCustomerIds.slice(i, i + BATCH);
-            const selRes = await admin.graphql(
-              `#graphql
-              mutation UpdateCustomerSelection($id: ID!, $input: DiscountCodeAppInput!) {
-                discountCodeAppUpdate(id: $id, codeAppDiscount: $input) {
-                  userErrors { field message }
-                }
-              }`,
-              { variables: { id: appId, input: { customerSelection: { all: false, customers: { add: batch } } } } }
-            );
-            const selData = await selRes.json();
-            const selErrors = selData.data?.discountCodeAppUpdate?.userErrors ?? [];
-            if (selErrors.length > 0) {
-              errors.push(`Customer selection for ${code.code} (batch ${i}): ${selErrors.map((e: { message: string }) => e.message).join(", ")}`);
-              selectionError = true;
-              break;
-            }
-          }
-        } else if (!selectionError && eligibleCustomerIds.length === 0) {
-          // No eligible customers — keep as all: false (nobody can use it)
-          const noneRes = await admin.graphql(
+        if (segmentId) {
+          // Clear existing selection then assign segment
+          await admin.graphql(
             `#graphql
             mutation UpdateCustomerSelection($id: ID!, $input: DiscountCodeAppInput!) {
               discountCodeAppUpdate(id: $id, codeAppDiscount: $input) {
                 userErrors { field message }
               }
             }`,
-            { variables: { id: appId, input: { customerSelection: { all: false } } } }
+            { variables: { id: appId, input: { customerSelection: { all: true } } } }
           );
-          const noneData = await noneRes.json();
-          const noneErrors = noneData.data?.discountCodeAppUpdate?.userErrors ?? [];
-          if (noneErrors.length > 0) {
-            errors.push(`Customer selection for ${code.code}: ${noneErrors.map((e: { message: string }) => e.message).join(", ")}`);
+          const selRes = await admin.graphql(
+            `#graphql
+            mutation UpdateCustomerSelection($id: ID!, $input: DiscountCodeAppInput!) {
+              discountCodeAppUpdate(id: $id, codeAppDiscount: $input) {
+                userErrors { field message }
+              }
+            }`,
+            { variables: { id: appId, input: { customerSelection: { customerSegments: { add: [segmentId] } } } } }
+          );
+          const selData = await selRes.json();
+          const selErrors = selData.data?.discountCodeAppUpdate?.userErrors ?? [];
+          if (selErrors.length > 0) {
+            errors.push(`Customer segment for ${code.code}: ${selErrors.map((e: { message: string }) => e.message).join(", ")}`);
           }
         }
-        void oldEligible; // used implicitly via reset approach
       }
 
-      // --- BLOCKED LIST: write only blockedCustomerIds to function metafield ---
-      // eligibleCustomerIds is no longer written to the metafield — Shopify native handles it.
+      // --- BLOCKED LIST in metafield (kept as backup for function check) ---
       const metafieldConfig = JSON.stringify({ ...baseConfig, blockedCustomerIds });
       const writeTarget = code.functionNodeId ?? code.discountId;
       const mfRes = await admin.graphql(
@@ -366,10 +360,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       await db.singleCodeDiscount.update({
         where: { shop_discountId: { shop: session.shop, discountId: code.discountId } },
-        data: {
-          eligibleCustomerIds: JSON.stringify(eligibleCustomerIds),
-          blockedCustomerIds: JSON.stringify(blockedCustomerIds),
-        },
+        data: { blockedCustomerIds: JSON.stringify(blockedCustomerIds) },
       });
 
       if (!errors.some(e => e.includes(code.code))) syncedCount++;
