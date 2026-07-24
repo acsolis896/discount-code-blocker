@@ -128,6 +128,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     const requiredTag = eligibilityMode === "tags" ? String(formData.get("requiredTag") || "").trim() : "";
     const blockedTag = eligibilityMode === "tags" ? String(formData.get("blockedTag") || "").trim() : "";
     const selectedSegmentId = String(formData.get("segmentId") || "").trim();
+    const endsAtRaw = String(formData.get("endsAt") || "");
+    const endsAt = endsAtRaw ? new Date(endsAtRaw).toISOString() : null;
     const percentage = Number(formData.get("percentage") || 0);
     const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
     const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
@@ -226,6 +228,18 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       blockedTag,
     });
 
+    // Update endsAt on the Shopify discount
+    const appDiscountId = discountId.replace("DiscountCodeNode", "DiscountCodeApp");
+    await admin.graphql(
+      `#graphql
+      mutation UpdateDiscountEndsAt($id: ID!, $input: DiscountCodeAppInput!) {
+        discountCodeAppUpdate(id: $id, codeAppDiscount: $input) {
+          userErrors { field message }
+        }
+      }`,
+      { variables: { id: appDiscountId, input: { endsAt: endsAt ?? null } } }
+    );
+
     let eligibilityWarning: string | null = null;
     if (eligibilityMode !== "all") {
       eligibilityWarning = await applyEligibility(
@@ -281,6 +295,7 @@ export default function SingleCodeDetailsPage() {
   const fetcher = useFetcher<typeof action>();
 
   const [editing, setEditing] = useState(false);
+  const [endsAt, setEndsAt] = useState(loaderData.endsAt ? new Date(loaderData.endsAt).toISOString().split("T")[0] : "");
   const [eligibilityMode, setEligibilityMode] = useState<"all" | "tags" | "segment">(loaderData.eligibilityMode);
   const [requiredTag, setRequiredTag] = useState(loaderData.requiredTag);
   const [blockedTag, setBlockedTag] = useState(loaderData.blockedTag);
@@ -330,6 +345,7 @@ export default function SingleCodeDetailsPage() {
   const handleSave = () => {
     const form = new FormData();
     form.set("intent", "updateConfig");
+    form.set("endsAt", endsAt);
     form.set("eligibilityMode", eligibilityMode);
     form.set("requiredTag", requiredTag);
     form.set("blockedTag", blockedTag);
@@ -515,6 +531,23 @@ export default function SingleCodeDetailsPage() {
                 helpText="Percentage off the eligible product"
                 onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
               />
+            </div>
+            <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <label style={{ fontSize: "14px", fontWeight: 500 }}>Expiry date (optional)</label>
+              <input
+                type="date"
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
+                style={{ padding: "8px", borderRadius: "8px", border: "1px solid #8a8a8a", fontSize: "14px", height: "36px", width: "200px" }}
+              />
+              {endsAt && (
+                <button
+                  onClick={() => setEndsAt("")}
+                  style={{ alignSelf: "flex-start", background: "none", border: "none", color: "#6d7175", fontSize: "12px", cursor: "pointer", padding: 0 }}
+                >
+                  Clear expiry
+                </button>
+              )}
             </div>
           </>
         )}
