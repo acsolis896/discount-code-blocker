@@ -129,7 +129,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     const blockedTag = eligibilityMode === "tags" ? String(formData.get("blockedTag") || "").trim() : "";
     const selectedSegmentId = String(formData.get("segmentId") || "").trim();
     const endsAtRaw = String(formData.get("endsAt") || "");
-    const endsAt = endsAtRaw ? new Date(endsAtRaw).toISOString() : null;
+    const endsAt = endsAtRaw ? new Date(`${endsAtRaw}T23:59:59.000Z`).toISOString() : null;
     const percentage = Number(formData.get("percentage") || 0);
     const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
     const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));

@@ -27,7 +27,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const blockedTag = eligibilityMode === "tags" ? String(formData.get("blockedTag") || "").trim() : "";
   const selectedSegmentId = String(formData.get("segmentId") || "").trim();
   const endsAtRaw = String(formData.get("endsAt") || "");
-  const endsAt = endsAtRaw ? new Date(endsAtRaw).toISOString() : null;
+  const endsAt = endsAtRaw ? new Date(`${endsAtRaw}T23:59:59.000Z`).toISOString() : null;
   const combinesWithProduct = formData.get("combinesWithProduct") === "1";
   const combinesWithOrder = formData.get("combinesWithOrder") === "1";
   const combinesWithShipping = formData.get("combinesWithShipping") === "1";
