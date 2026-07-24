@@ -36,6 +36,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
             title
             status
             asyncUsageCount
+            appliesOncePerCustomer
             startsAt
             endsAt
             combinesWith { productDiscounts orderDiscounts shippingDiscounts }
@@ -106,6 +107,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     startsAt: discount?.startsAt ?? null,
     endsAt: discount?.endsAt ?? null,
     combinesWith: discount?.combinesWith ?? { productDiscounts: false, orderDiscounts: false, shippingDiscounts: false },
+    appliesOncePerCustomer: discount?.appliesOncePerCustomer ?? false,
     percentage: config.percentage ?? null,
     productIds,
     collectionIds,
@@ -130,6 +132,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     const selectedSegmentId = String(formData.get("segmentId") || "").trim();
     const endsAtRaw = String(formData.get("endsAt") || "");
     const endsAt = endsAtRaw ? new Date(`${endsAtRaw}T23:59:59.000Z`).toISOString() : null;
+    const appliesOncePerCustomer = formData.get("appliesOncePerCustomer") === "1";
     const percentage = Number(formData.get("percentage") || 0);
     const productIds: string[] = JSON.parse(String(formData.get("productIds") || "[]"));
     const collectionIds: string[] = JSON.parse(String(formData.get("collectionIds") || "[]"));
@@ -237,7 +240,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
           userErrors { field message }
         }
       }`,
-      { variables: { id: appDiscountId, input: { endsAt: endsAt ?? null } } }
+      { variables: { id: appDiscountId, input: { endsAt: endsAt ?? null, appliesOncePerCustomer } } }
     );
 
     let eligibilityWarning: string | null = null;
@@ -296,6 +299,7 @@ export default function SingleCodeDetailsPage() {
 
   const [editing, setEditing] = useState(false);
   const [endsAt, setEndsAt] = useState(loaderData.endsAt ? new Date(loaderData.endsAt).toISOString().split("T")[0] : "");
+  const [appliesOncePerCustomer, setAppliesOncePerCustomer] = useState(loaderData.appliesOncePerCustomer);
   const [eligibilityMode, setEligibilityMode] = useState<"all" | "tags" | "segment">(loaderData.eligibilityMode);
   const [requiredTag, setRequiredTag] = useState(loaderData.requiredTag);
   const [blockedTag, setBlockedTag] = useState(loaderData.blockedTag);
@@ -346,6 +350,7 @@ export default function SingleCodeDetailsPage() {
     const form = new FormData();
     form.set("intent", "updateConfig");
     form.set("endsAt", endsAt);
+    form.set("appliesOncePerCustomer", appliesOncePerCustomer ? "1" : "0");
     form.set("eligibilityMode", eligibilityMode);
     form.set("requiredTag", requiredTag);
     form.set("blockedTag", blockedTag);
@@ -402,6 +407,10 @@ export default function SingleCodeDetailsPage() {
             <div>
               <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Discount</div>
               <span style={{ fontSize: "16px", fontWeight: 500 }}>{loaderData.percentage}%</span>
+            </div>
+            <div>
+              <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Once per customer</div>
+              <span style={{ fontSize: "16px", fontWeight: 500 }}>{loaderData.appliesOncePerCustomer ? "Yes" : "No"}</span>
             </div>
           </div>
           {loaderData.endsAt && (
@@ -548,6 +557,16 @@ export default function SingleCodeDetailsPage() {
                   Clear expiry
                 </button>
               )}
+            </div>
+            <div style={{ marginTop: "12px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={appliesOncePerCustomer}
+                  onChange={(e) => setAppliesOncePerCustomer(e.target.checked)}
+                />
+                Limit to one use per customer
+              </label>
             </div>
           </>
         )}

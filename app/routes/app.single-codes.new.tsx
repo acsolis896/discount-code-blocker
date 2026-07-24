@@ -28,6 +28,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const selectedSegmentId = String(formData.get("segmentId") || "").trim();
   const endsAtRaw = String(formData.get("endsAt") || "");
   const endsAt = endsAtRaw ? new Date(`${endsAtRaw}T23:59:59.000Z`).toISOString() : null;
+  const appliesOncePerCustomer = formData.get("appliesOncePerCustomer") === "1";
   const combinesWithProduct = formData.get("combinesWithProduct") === "1";
   const combinesWithOrder = formData.get("combinesWithOrder") === "1";
   const combinesWithShipping = formData.get("combinesWithShipping") === "1";
@@ -94,6 +95,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           startsAt: new Date().toISOString(),
           ...(endsAt ? { endsAt } : {}),
           code,
+          appliesOncePerCustomer,
           discountClasses: ["PRODUCT"],
           combinesWith: {
             productDiscounts: combinesWithProduct,
@@ -249,6 +251,7 @@ export default function NewSingleCodePage() {
   const [collectionIds, setCollectionIds] = useState<string[]>([]);
   const [collectionTitles, setCollectionTitles] = useState<string[]>([]);
   const [pickerMode, setPickerMode] = useState<"product" | "collection">("collection");
+  const [appliesOncePerCustomer, setAppliesOncePerCustomer] = useState(false);
   const [combinesWithProduct, setCombinesWithProduct] = useState(false);
   const [combinesWithOrder, setCombinesWithOrder] = useState(false);
   const [combinesWithShipping, setCombinesWithShipping] = useState(false);
@@ -304,6 +307,7 @@ export default function NewSingleCodePage() {
     form.set("endsAt", endsAt);
     form.set("productIds", JSON.stringify(productIds));
     form.set("collectionIds", JSON.stringify(collectionIds));
+    form.set("appliesOncePerCustomer", appliesOncePerCustomer ? "1" : "0");
     form.set("combinesWithProduct", combinesWithProduct ? "1" : "0");
     form.set("combinesWithOrder", combinesWithOrder ? "1" : "0");
     form.set("combinesWithShipping", combinesWithShipping ? "1" : "0");
@@ -440,6 +444,17 @@ export default function NewSingleCodePage() {
             </div>
           )}
         </s-stack>
+      </s-section>
+
+      <s-section heading="Usage limit">
+        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={appliesOncePerCustomer}
+            onChange={(e) => setAppliesOncePerCustomer(e.target.checked)}
+          />
+          Limit to one use per customer
+        </label>
       </s-section>
 
       <s-section heading="Combinations">
