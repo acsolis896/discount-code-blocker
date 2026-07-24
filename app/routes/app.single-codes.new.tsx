@@ -322,12 +322,15 @@ export default function NewSingleCodePage() {
           helpText="Percentage off the eligible product"
           onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
         />
-        <s-text-field
-          label="Expiry date (optional)"
-          type="date"
-          value={endsAt}
-          onInput={(e: { target: { value: string } }) => setEndsAt(e.target.value)}
-        />
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          <label style={{ fontSize: "14px", fontWeight: 500 }}>Expiry date (optional)</label>
+          <input
+            type="date"
+            value={endsAt}
+            onChange={(e) => setEndsAt(e.target.value)}
+            style={{ padding: "8px", borderRadius: "8px", border: "1px solid #8a8a8a", fontSize: "14px", height: "36px" }}
+          />
+        </div>
       </s-section>
 
       <s-section heading="Eligible items">
