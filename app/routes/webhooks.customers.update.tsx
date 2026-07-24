@@ -3,35 +3,40 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin, shop, payload } = await authenticate.webhook(request);
+  const { admin, payload, session } = await authenticate.webhook(request);
 
-  const customer = payload as { id: number; tags: string };
+  if (!admin || !session) return new Response();
+
+  const customer = payload as { id: number };
   const customerId = `gid://shopify/Customer/${customer.id}`;
-  const customerTags: string[] = (customer.tags ?? "")
-    .split(",")
-    .map((t: string) => t.trim())
-    .filter(Boolean);
+
+  // Tags are not included in the 2026-04 webhook payload — fetch them via Admin API
+  const customerRes = await admin.graphql(
+    `#graphql
+    query GetCustomerTags($id: ID!) {
+      customer(id: $id) { tags }
+    }`,
+    { variables: { id: customerId } }
+  );
+  const customerData = await customerRes.json();
+  const customerTags: string[] = (customerData.data?.customer?.tags ?? []).map(
+    (t: string) => t.trim().toLowerCase()
+  );
 
   // Customer eligibility (requiredTag whitelist) is handled by a dynamic customer segment
   // assigned to the discount — no action needed here for the eligible list.
   // We only update blockedCustomerIds in the function metafield as a backup check.
 
   const codes = await db.singleCodeDiscount.findMany({
-    where: { shop },
-    select: {
-      discountId: true,
-      blockedTag: true,
-      configJson: true,
-      blockedCustomerIds: true,
-      functionNodeId: true,
-    },
+    where: { shop: session.shop },
+    select: { discountId: true, blockedTag: true, configJson: true, functionNodeId: true, blockedCustomerIds: true },
   });
 
   for (const code of codes) {
     if (!code.configJson || !code.blockedTag) continue;
 
     const blocked: string[] = code.blockedCustomerIds ? JSON.parse(code.blockedCustomerIds) : [];
-    const hasBlockedTag = customerTags.includes(code.blockedTag);
+    const hasBlockedTag = customerTags.includes(code.blockedTag.toLowerCase());
 
     let changed = false;
     if (hasBlockedTag && !blocked.includes(customerId)) {
@@ -44,23 +49,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!changed) continue;
 
-    let baseConfig: Record<string, unknown>;
+    let baseConfig: Record<string, unknown> = {};
     try { baseConfig = JSON.parse(code.configJson); } catch { continue; }
 
-    await db.singleCodeDiscount.update({
-      where: { shop_discountId: { shop, discountId: code.discountId } },
+    await db.singleCodeDiscount.updateMany({
+      where: { shop: session.shop, discountId: code.discountId },
       data: { blockedCustomerIds: JSON.stringify(blocked) },
     });
 
+    const writeTarget = code.functionNodeId ?? code.discountId;
     const metafieldConfig = JSON.stringify({ ...baseConfig, blockedCustomerIds: blocked });
     await admin.graphql(
       `#graphql
-      mutation SetDiscountMetafield($metafields: [MetafieldsSetInput!]!) {
+      mutation UpdateDiscountMF($metafields: [MetafieldsSetInput!]!) {
         metafieldsSet(metafields: $metafields) {
           userErrors { field message }
         }
       }`,
-      { variables: { metafields: [{ ownerId: code.functionNodeId ?? code.discountId, namespace: "$app", key: "function-configuration", type: "json", value: metafieldConfig }] } }
+      {
+        variables: {
+          metafields: [{
+            ownerId: writeTarget,
+            namespace: "$app",
+            key: "function-configuration",
+            type: "json",
+            value: metafieldConfig,
+          }],
+        },
+      }
     );
   }
 
