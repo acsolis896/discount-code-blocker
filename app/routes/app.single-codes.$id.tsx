@@ -406,7 +406,7 @@ export default function SingleCodeDetailsPage() {
           </div>
           {loaderData.endsAt && (
             <div style={{ fontSize: "13px", color: "#6d7175" }}>
-              Expires: {new Date(loaderData.endsAt).toLocaleDateString()}
+              Expires: {new Date(loaderData.endsAt).toLocaleDateString("en-US", { timeZone: "UTC" })}
             </div>
           )}
         </div>
