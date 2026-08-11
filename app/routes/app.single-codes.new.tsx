@@ -19,7 +19,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const title = String(formData.get("title") || "").trim();
   const code = String(formData.get("code") || "").trim().toUpperCase();
+  const discountType = String(formData.get("discountType") || "percentage") === "fixedAmount" ? "fixedAmount" : "percentage";
   const percentage = Number(formData.get("percentage") || 0);
+  const fixedAmount = Number(formData.get("fixedAmount") || 0);
+  const oncePerOrder = formData.get("oncePerOrder") !== "0";
   const eligibilityMode = (["all", "tags", "segment"] as const).includes(String(formData.get("eligibilityMode")) as "all" | "tags" | "segment")
     ? (String(formData.get("eligibilityMode")) as "all" | "tags" | "segment")
     : "all";
@@ -37,7 +40,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (!title) return { error: "Title is required." };
   if (!code) return { error: "Discount code is required." };
-  if (!percentage || percentage < 1 || percentage > 100) return { error: "Percentage must be between 1 and 100." };
+  if (discountType === "percentage") {
+    if (!percentage || percentage < 1 || percentage > 100) return { error: "Percentage must be between 1 and 100." };
+  } else {
+    if (!fixedAmount || fixedAmount <= 0) return { error: "Fixed amount must be greater than 0." };
+  }
   if (productIds.length === 0 && collectionIds.length === 0) return { error: "Select at least one eligible product or collection." };
 
   // Expand collections to product IDs
@@ -122,7 +129,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const metafieldConfig = JSON.stringify({
     productIds: resolvedProductIds,
     collectionIds,
-    percentage,
+    discountType,
+    ...(discountType === "fixedAmount" ? { fixedAmount } : { percentage }),
+    oncePerOrder,
     blockedProductTypes,
     requiredTag,
     blockedTag,
@@ -240,7 +249,10 @@ export default function NewSingleCodePage() {
 
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
+  const [discountType, setDiscountType] = useState<"percentage" | "fixedAmount">("percentage");
   const [percentage, setPercentage] = useState("50");
+  const [fixedAmount, setFixedAmount] = useState("10");
+  const [oncePerOrder, setOncePerOrder] = useState(true);
   const [eligibilityMode, setEligibilityMode] = useState<"all" | "tags" | "segment">("all");
   const [requiredTag, setRequiredTag] = useState("");
   const [blockedTag, setBlockedTag] = useState("");
@@ -299,7 +311,10 @@ export default function NewSingleCodePage() {
     const form = new FormData();
     form.set("title", title);
     form.set("code", code);
+    form.set("discountType", discountType);
     form.set("percentage", percentage);
+    form.set("fixedAmount", fixedAmount);
+    form.set("oncePerOrder", oncePerOrder ? "1" : "0");
     form.set("eligibilityMode", eligibilityMode);
     form.set("requiredTag", requiredTag);
     form.set("blockedTag", blockedTag);
@@ -352,15 +367,63 @@ export default function NewSingleCodePage() {
           helpText="The code customers enter at checkout"
           onInput={(e: { target: { value: string } }) => setCode(e.target.value.toUpperCase())}
         />
-        <s-text-field
-          label="Discount percentage"
-          type="number"
-          value={percentage}
-          min="1"
-          max="100"
-          helpText="Percentage off the eligible product"
-          onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
-        />
+        <div style={{ marginTop: "16px" }}>
+          <s-stack direction="block" gap="tight">
+            <s-text emphasis="bold" style={{ fontSize: "14px" }}>Discount value</s-text>
+            <div style={{ width: "fit-content" }}>
+              <div style={{ display: "inline-flex", background: "#f1f1f1", borderRadius: "8px", padding: "3px", gap: "2px" }}>
+                {(["percentage", "fixedAmount"] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setDiscountType(type)}
+                    style={{
+                      padding: "6px 16px", borderRadius: "6px", border: "none", cursor: "pointer",
+                      fontSize: "14px", fontWeight: 500, transition: "all 0.15s",
+                      background: discountType === type ? "#fff" : "transparent",
+                      color: discountType === type ? "#202223" : "#6d7175",
+                      boxShadow: discountType === type ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
+                    }}
+                  >
+                    {type === "percentage" ? "Percentage" : "Fixed amount"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {discountType === "percentage" ? (
+              <s-text-field
+                label="Discount percentage"
+                type="number"
+                value={percentage}
+                min="1"
+                max="100"
+                helpText="Percentage off the eligible product"
+                onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
+              />
+            ) : (
+              <s-text-field
+                label="Amount off"
+                type="number"
+                value={fixedAmount}
+                min="0.01"
+                step="0.01"
+                prefix="$"
+                helpText="Fixed amount off the eligible product"
+                onInput={(e: { target: { value: string } }) => setFixedAmount(e.target.value)}
+              />
+            )}
+          </s-stack>
+        </div>
+        <div style={{ marginTop: "16px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", cursor: "pointer" }}>
+            <input type="checkbox" checked={oncePerOrder} onChange={(e) => setOncePerOrder(e.target.checked)} />
+            Only apply discount once per order
+          </label>
+          <div style={{ fontSize: "12px", color: "#6d7175", marginTop: "4px" }}>
+            {oncePerOrder
+              ? "Applies to the highest-priced eligible item in the cart — 1 unit only."
+              : "The discount will be taken off every eligible item in the cart."}
+          </div>
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           <label style={{ fontSize: "14px", fontWeight: 500 }}>Expiry date (optional)</label>
           <input
