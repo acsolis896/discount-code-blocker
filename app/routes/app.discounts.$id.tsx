@@ -390,11 +390,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   const code = formData.get("code") as string;
 
-  // discountRedeemCodeBulkDelete is async — poll until the job completes
+  // discountCodeRedeemCodeBulkDelete is async — poll until the job completes
   const deleteRes = await admin.graphql(
     `#graphql
     mutation DisableCode($discountId: ID!, $search: String) {
-      discountRedeemCodeBulkDelete(discountId: $discountId, search: $search) {
+      discountCodeRedeemCodeBulkDelete(discountId: $discountId, search: $search) {
         job { id }
         userErrors { field message }
       }
@@ -402,7 +402,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     { variables: { discountId: gid, search: code } }
   );
   const deleteData = await deleteRes.json();
-  const jobId = deleteData.data?.discountRedeemCodeBulkDelete?.job?.id;
+  const jobId = deleteData.data?.discountCodeRedeemCodeBulkDelete?.job?.id;
 
   if (jobId) {
     for (let i = 0; i < 10; i++) {
