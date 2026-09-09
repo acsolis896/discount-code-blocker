@@ -586,9 +586,10 @@ export default function Index() {
                 label="Code prefix"
                 value={prefix}
                 onInput={(e: InputEvent) => setPrefix((e.target as HTMLInputElement).value)}
-                details={previewCode ? `Preview: ${previewCode}` : "Letters and numbers only, e.g. BAJIO"}
+                details={previewCode ? `Preview: ${previewCode}` : "Letters and numbers only, e.g. WELCOME — a dash and random characters will be added automatically"}
               />
               <s-text-field
+                style={{ marginTop: "16px" }}
                 label="Number of codes"
                 type="number"
                 value={codeCount}
@@ -598,6 +599,7 @@ export default function Index() {
                 details="Maximum 5,000 per batch"
               />
               <s-text-field
+                style={{ marginTop: "16px" }}
                 label="Code length"
                 type="number"
                 value={codeLength}
