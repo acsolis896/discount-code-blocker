@@ -451,7 +451,7 @@ export default function Index() {
             label="Title"
             value={title}
             onInput={(e: InputEvent) => setTitle((e.target as HTMLInputElement).value)}
-            helpText="Shown in the Shopify admin discounts list"
+            details="Shown in the Shopify admin discounts list"
           />
           <div style={{ marginTop: "16px" }}>
             <s-stack direction="block" gap="tight">
@@ -586,7 +586,7 @@ export default function Index() {
                 label="Code prefix"
                 value={prefix}
                 onInput={(e: InputEvent) => setPrefix((e.target as HTMLInputElement).value)}
-                helpText={previewCode ? `Preview: ${previewCode}` : "Letters and numbers only, e.g. BAJIO"}
+                details={previewCode ? `Preview: ${previewCode}` : "Letters and numbers only, e.g. BAJIO"}
               />
               <s-text-field
                 label="Number of codes"
@@ -595,7 +595,7 @@ export default function Index() {
                 min="1"
                 max="5000"
                 onInput={(e: InputEvent) => setCodeCount((e.target as HTMLInputElement).value)}
-                helpText="Maximum 5,000 per batch"
+                details="Maximum 5,000 per batch"
               />
               <s-text-field
                 label="Code length"
@@ -604,7 +604,7 @@ export default function Index() {
                 min="4"
                 max="12"
                 onInput={(e: InputEvent) => setCodeLength((e.target as HTMLInputElement).value)}
-                helpText="Number of random characters after the prefix (4–12)"
+                details="Number of random characters after the prefix (4–12)"
               />
             </s-form-layout>
           )}

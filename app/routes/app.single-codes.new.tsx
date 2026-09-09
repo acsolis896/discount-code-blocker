@@ -357,14 +357,14 @@ export default function NewSingleCodePage() {
           label="Title"
           value={title}
           placeholder="e.g. Guide 50% Discount"
-          helpText="Shown in the Shopify admin discounts list"
+          details="Shown in the Shopify admin discounts list"
           onInput={(e: { target: { value: string } }) => setTitle(e.target.value)}
         />
         <s-text-field
           label="Discount code"
           value={code}
           placeholder="e.g. GUIDE50"
-          helpText="The code customers enter at checkout"
+          details="The code customers enter at checkout"
           onInput={(e: { target: { value: string } }) => setCode(e.target.value.toUpperCase())}
         />
         <div style={{ marginTop: "16px" }}>
@@ -396,7 +396,7 @@ export default function NewSingleCodePage() {
                 value={percentage}
                 min="1"
                 max="100"
-                helpText="Percentage off the eligible product"
+                details="Percentage off the eligible product"
                 onInput={(e: { target: { value: string } }) => setPercentage(e.target.value)}
               />
             ) : (
@@ -407,7 +407,7 @@ export default function NewSingleCodePage() {
                 min="0.01"
                 step="0.01"
                 prefix="$"
-                helpText="Fixed amount off the eligible product"
+                details="Fixed amount off the eligible product"
                 onInput={(e: { target: { value: string } }) => setFixedAmount(e.target.value)}
               />
             )}
@@ -476,14 +476,14 @@ export default function NewSingleCodePage() {
                 label="Required customer tag"
                 value={requiredTag}
                 placeholder="e.g. INFLUENCER50"
-                helpText="Customers must have this tag to use the code"
+                details="Customers must have this tag to use the code"
                 onInput={(e: { target: { value: string } }) => setRequiredTag(e.target.value)}
               />
               <s-text-field
                 label="Blocked customer tag"
                 value={blockedTag}
                 placeholder="e.g. INFLUENCER50-USED"
-                helpText="Customers with this tag will be rejected (usage limit reached)"
+                details="Customers with this tag will be rejected (usage limit reached)"
                 onInput={(e: { target: { value: string } }) => setBlockedTag(e.target.value)}
               />
             </>

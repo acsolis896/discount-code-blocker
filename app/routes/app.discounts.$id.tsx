@@ -745,7 +745,7 @@ export default function DiscountDetails() {
                 min="1"
                 max="5000"
                 onInput={(e: InputEvent) => setAddCodeCount((e.target as HTMLInputElement).value)}
-                helpText="Maximum 5,000 per batch"
+                details="Maximum 5,000 per batch"
               />
             </s-form-layout>
           )}
@@ -759,7 +759,7 @@ export default function DiscountDetails() {
                 label="Code prefix"
                 value={addPrefix}
                 onInput={(e: InputEvent) => setAddPrefix((e.target as HTMLInputElement).value)}
-                helpText="Letters and numbers only, e.g. BAJIO"
+                details="Letters and numbers only, e.g. BAJIO"
               />
               <s-text-field
                 label="Number of codes"
@@ -768,7 +768,7 @@ export default function DiscountDetails() {
                 min="1"
                 max="5000"
                 onInput={(e: InputEvent) => setAddCodeCount((e.target as HTMLInputElement).value)}
-                helpText="Maximum 5,000 per batch"
+                details="Maximum 5,000 per batch"
               />
               <s-text-field
                 label="Code length"
@@ -777,7 +777,7 @@ export default function DiscountDetails() {
                 min="4"
                 max="12"
                 onInput={(e: InputEvent) => setAddCodeLength((e.target as HTMLInputElement).value)}
-                helpText="Number of random characters after the prefix (4–12)"
+                details="Number of random characters after the prefix (4–12)"
               />
             </s-form-layout>
           )}
