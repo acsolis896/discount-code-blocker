@@ -134,7 +134,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     const blockedTag = eligibilityMode === "tags" ? String(formData.get("blockedTag") || "").trim() : "";
     const selectedSegmentId = String(formData.get("segmentId") || "").trim();
     const endsAtRaw = String(formData.get("endsAt") || "");
-    const endsAt = endsAtRaw ? new Date(`${endsAtRaw}T23:59:59.000Z`).toISOString() : null;
+    const endsAt = endsAtRaw ? new Date(`${endsAtRaw}T23:59:59-08:00`).toISOString() : null;
     const appliesOncePerCustomer = formData.get("appliesOncePerCustomer") === "1";
     const discountType = String(formData.get("discountType") || "percentage") === "fixedAmount" ? "fixedAmount" : "percentage";
     const percentage = Number(formData.get("percentage") || 0);
@@ -439,7 +439,7 @@ export default function SingleCodeDetailsPage() {
           </div>
           {loaderData.endsAt && (
             <div style={{ fontSize: "13px", color: "#6d7175" }}>
-              Expires: {new Date(loaderData.endsAt).toLocaleDateString("en-US", { timeZone: "UTC" })}
+              Expires: {new Date(loaderData.endsAt).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" })}
             </div>
           )}
         </div>
